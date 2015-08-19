@@ -13,9 +13,9 @@ use Set::IntervalTree;
 my $_debug = 0;
 
 my %enviroment = (
-    genomeFile        => "/home/qczhang/projects2/rnaPairing/data/grch38.fna",
-    annotationFile    => "/home/qczhang/projects2/rnaPairing/data/gencode.v21.chr_patch_hapl_scaff.annotation.gtf",
-    transcriptomeFile => "/home/qczhang/database/ensembl/current/mouse/gtf/transcriptome.fa",
+    genomeFile        => "/Share/home/zhangqf/cliff/paris/data/ref/grch38.fna",
+    annotationFile    => "/Share/home/zhangqf/cliff/paris/data/ref/gencode.v21.chr_patch_hapl_scaff.annotation.gtf",
+    transcriptomeFile => "/Share/home/zhangqf/cliff/paris/data/ref/transcriptome.fa",
 
     maxChr            => 999999999999,
     intronFlanking    => 3,

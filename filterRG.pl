@@ -23,16 +23,23 @@ my %global = (
 #
 my $readGroup = shift;
 my $output = shift;
+my $supportSAM = shift;
 
-&main ( $readGroup, $output );
+&main ( $readGroup, $output, $supportSAM );
 sub main
 {
     my $readGroupFile = shift;
     my $outputFile = shift;
+    my $supportSamFile = shift;
     my %parameters = @_;
 
+    my %supportReads = ();
     my $memoryUsage = Memory::Usage->new(); $memoryUsage->record('starting work');
-    my $totalGroup = loadReadGroup ( $readGroupFile, $output );
+    my $totalGroup = loadReadGroup ( $readGroupFile, $output, \%supportReads );
+    if ( defined $supportSamFile ) { 
+	my $validReads = loadSupportSam ( $supportSamFile, \%supportReads ); 
+	print STDERR "$validReads valid reads in total!\n";
+    } 
 
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
 
@@ -44,6 +51,7 @@ sub loadReadGroup
 {
     my $readGroupFile = shift;
     my $outputFile = shift;
+    my $ref_supportReads = shift;
 
     my $readGroupCount = 0;
     my %readGroup_interval = ();
@@ -74,6 +82,9 @@ sub loadReadGroup
 
                 INNER: while ( $line =<RG> ) {
                     print OUT $line;
+
+		    my @support = split ( /\s+/, $line );
+		    if ( $support[0] ) { $ref_supportReads->{$support[0]} = 1; }
                     last INNER if ( not ( $line =~ /\S/ ) );
                 }
             }
@@ -85,58 +96,26 @@ sub loadReadGroup
     return $readGroupCount;
 }
 
-
-sub _reverseComplement
+sub loadSupportSam
 {
-    my $inseq = shift;
-    my $outseq = reverse ( $inseq );
+    my $supportSamFile = shift;
+    my $ref_supportReads = shift;
 
-    $outseq =~ tr/AGTCagtc/TCAGtcag/;
-    return $outseq;
-}
-
-sub _parseCigar
-{
-    my $cigar = shift;
-    my %parameters = @_;
-
-    my @match = split ( /[0-9]+/, $cigar );             # CIGAR: \*|([0-9]+[MIDNSHPX=])+
-    shift @match;
-    my @matchSize = split ( /[MIDNSHPX=]/, $cigar );
-
-    if ( $_debug ) {
-        print STDERR "CIGAR\t", $cigar, "\nmatchOper";
-        _printArray ( \@match );
-        print STDERR "\nmatchSize";
-        _printArray ( \@matchSize );
-        print STDERR "\n";
+    my $validReads = 0;
+    my $filterSamFile = $supportSamFile;
+    $filterSamFile =~ s/.sam$/.filtered.sam/;
+    open ( SP, $supportSamFile );
+    open ( FL, ">$filterSamFile" );
+    while ( my $line = <SP> ) {
+	my @data = split ( /\t/, $line );
+	if ( defined $ref_supportReads->{$data[0]} ) {
+	    $validReads++;
+	    print FL $line;
+	}
     }
+    close SP;
+    close FL;
 
-    if ( $parameters{getLargestM} ) {
-        my $largestM = 0;
-        for ( my $idx = 0; $idx < scalar ( @match ); $idx++ ) {
-            if ( $match[$idx] eq "M" ) {
-                if ( $matchSize[$idx] > $largestM ) {
-                    $largestM = $matchSize[$idx];
-                }
-            }
-        }
-
-        return $largestM;
-    }
-    if ( $parameters{getLeadingS} ) {
-        if ( $match[0] ne "S" ) {
-            print STDERR "Warning! unexpected CIGAR string: $cigar!\n";
-            return 0;
-        }
-        else { return $matchSize[0]; }
-    }
-    elsif ( $parameters{getMatchLen} ) {
-    }
-    else {
-        return ( \@match, \@matchSize );
-    }
-
-    1;
+    return $validReads;
 }
 
