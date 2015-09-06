@@ -7,25 +7,23 @@ use Data::Dumper;
 use Time::HiRes;
 use Memory::Usage;
 use Set::IntervalTree;
+
+use lib "/Share/home/zhangqf/cliff/paris/module";
+use PARISutil qw( &loadGTF &loadGenome &parseCigar &reverseComplement &localAlignment );
 #
 ##--------------------------------------------------
 #
 my $_debug = 0;
 
-my %enviroment = (
+my %environment = (
     genomeFile        => "/Share/home/zhangqf/cliff/paris/data/ref/grch38.fna",
     annotationFile    => "/Share/home/zhangqf/cliff/paris/data/ref/gencode.v21.chr_patch_hapl_scaff.annotation.gtf",
     transcriptomeFile => "/Share/home/zhangqf/cliff/paris/data/ref/transcriptome.fa",
 
     maxChr            => 999999999999,
     intronFlanking    => 3,
-    minSupport        => 1,
-
-    matchEnergy       => { 'AA' => -999, 'AC' => -999, 'AG' => -999, 'AT' => 1,
-                           'CA' => -999, 'CC' => -999, 'CG' => 1, 'CT' => -999,
-                           'GA' => -999, 'GC' => 1, 'GG' => -999, 'GT' => 1,
-                           'TA' => 1, 'TC' => -999, 'TG' => 1, 'TT' => -999 },
-    gapPenalty        => -1
+    minOverhang	      => 20,
+    minSupport        => 1
 );
 
 my %global = (
@@ -50,8 +48,8 @@ my $chiastic = shift;
 my $output = shift;
 my $chiasticSupport = shift;
 
-my $refSeq = shift; if ( $refSeq and ( $refSeq ne "NULL" ) ) { $enviroment{genomeFile} = $refSeq; }
-my $annotation = shift; if ( $annotation and ( $annotation ne "NULL" ) ) { $enviroment{annotationFile} = $annotation; }
+my $refSeq = shift; if ( $refSeq and ( $refSeq ne "NULL" ) ) { $environment{genomeFile} = $refSeq; }
+my $annotation = shift; if ( $annotation and ( $annotation ne "NULL" ) ) { $environment{annotationFile} = $annotation; }
 
 &main ( $inputSam, $chiastic, $output, $chiasticSupport );
 sub main
@@ -63,9 +61,9 @@ sub main
     my %parameters = @_;
 
     my $memoryUsage = Memory::Usage->new(); $memoryUsage->record('starting work');
-    $global{annotation} = _loadGTF ( $enviroment{annotationFile} );
+    $global{annotation} = loadGTF ( $environment{annotationFile} );
     $memoryUsage->record('Memory after GTF loading'); $memoryUsage->dump();
-    $global{genomeSeq} = _loadGenome ( $enviroment{genomeFile} );
+    $global{genomeSeq} = loadGenome ( $environment{genomeFile} );
     $memoryUsage->record('Memory after genome loading'); $memoryUsage->dump();
 
     my $allSupportSam = "";
@@ -83,7 +81,7 @@ sub main
     }
     $memoryUsage->record('Memory after chiastic junction file process'); $memoryUsage->dump();
 
-    sortCluster ( minSupport => $enviroment{minSupport} );
+    sortCluster ( minSupport => $environment{minSupport} );
     $memoryUsage->record('Memory after cluster sorting'); $memoryUsage->dump();
     printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam );
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
@@ -132,7 +130,7 @@ sub genPairClusterFromSamLine
     }
 
     my $strand = ( $data[1] & 16 ) ? "-" : "+";
-    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5] );
+    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
     if ( not $alignment ) {
         print STDERR "\t$line\n";
         return 0;
@@ -215,7 +213,8 @@ sub genPairClusterFromOneJunction
         else { print STDERR "\t$line\n"; return 0; }
     }
     if ( not $cigar ) {  print STDERR "\tSkip line of inapproprieate alignment: $line\n";  return 0;  }
-    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getJuncPair ( $data[0], $data[2], $data[1], $data[10], $data[11], $data[3], $data[5], $data[4], $data[12], $data[13] );
+    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = 
+	getJuncPair ( $data[0], $data[2], $data[1], $data[10], $data[11], $data[3], $data[5], $data[4], $data[12], $data[13], minOverhang => $environment{minOverhang} );
     if ( not $alignment ) { print STDERR "\t$line\n"; return 0; }
 
     $global{dsPair}[$global{dsPairCount}][2] = $alignment;
@@ -256,8 +255,8 @@ sub getNewCigar
     my $strand = shift;
     my ( $start1, $start2, $frag1Cigar, $frag2Cigar ) = @_;
 
-    my ( $ref_match1, $ref_matchSize1 ) = _parseCigar ( $frag1Cigar );
-    my ( $ref_match2, $ref_matchSize2 ) = _parseCigar ( $frag2Cigar );
+    my ( $ref_match1, $ref_matchSize1 ) = parseCigar ( $frag1Cigar );
+    my ( $ref_match2, $ref_matchSize2 ) = parseCigar ( $frag2Cigar );
 
     my $cigar = "";
     my $newReadFrag1 = "";  my $newReadFrag2 = "";
@@ -270,6 +269,9 @@ sub getNewCigar
                     $lenN -= $ref_matchSize1->[$idx];
                 }
             }
+	    #if ( $ref_match2->[0] eq "S" ) { 
+	    #    $lenN -= $ref_matchSize2->[0];
+	    #}
             if ( $lenN <= 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
@@ -284,6 +286,9 @@ sub getNewCigar
                     $lenN -= $ref_matchSize2->[$idx];
                 }
             }
+	    #if ( $ref_match1->[0] eq "S" ) { 
+	    #    $lenN -= $ref_matchSize1->[0];
+	    #}
             if ( $lenN <= 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
@@ -296,7 +301,7 @@ sub getNewCigar
             my $lenN = $start1 - $start2;
             for ( my $idx = 1; $idx < scalar ( @{$ref_match2} ); $idx++ ) { 
                 $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; 
-                if ( ( $ref_match2->[$idx] eq "M" ) or ( $ref_match2->[$idx] eq "=" ) or ( $ref_match2->[$idx] eq "X" ) or ( $ref_match2->[$idx] eq "D" ) or ( $ref_match2->[$idx] eq "N" ) ) { 
+                if ( ( $ref_match2->[$idx] eq "M" ) or ( $ref_match2->[$idx] eq "=" ) or ( $ref_match2->[$idx] eq "X" ) or ( $ref_match2->[$idx] eq "D" ) or ( $ref_match2->[$idx] eq "N" ) or ( $ref_match2->[$idx] eq "S" ) ) { 
                     $lenN -= $ref_matchSize2->[$idx];
                 }
             }
@@ -310,7 +315,7 @@ sub getNewCigar
             my $lenN = $start2 - $start1;
             for ( my $idx = 1; $idx < scalar ( @{$ref_match1} ); $idx++ ) { 
                 $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx];  
-                if ( ( $ref_match1->[$idx] eq "M" ) or ( $ref_match1->[$idx] eq "=" ) or ( $ref_match1->[$idx] eq "X" ) or ( $ref_match1->[$idx] eq "D" ) or ( $ref_match1->[$idx] eq "N" ) ) { 
+                if ( ( $ref_match1->[$idx] eq "M" ) or ( $ref_match1->[$idx] eq "=" ) or ( $ref_match1->[$idx] eq "X" ) or ( $ref_match1->[$idx] eq "D" ) or ( $ref_match1->[$idx] eq "N" ) or ( $ref_match1->[$idx] eq "S" ) ) { 
                     $lenN -= $ref_matchSize1->[$idx];
                 }
             }
@@ -327,17 +332,22 @@ sub getNewCigar
 
 sub getSamPair
 {
-    my ( $chr, $strand, $pos, $cigar ) = @_;
+    my $chr = shift;  my $strand = shift;  my $pos = shift;  my $cigar = shift;
+    my %parameters = @_;
 
-    my ( $ref_match, $ref_matchSize ) = _parseCigar ( $cigar );
+    my ( $ref_match, $ref_matchSize ) = parseCigar ( $cigar );
     my ( $frag1, $frag2, $frag1Pos, $frag2Pos ) = getBothFragment ( $chr, $strand, $pos, $ref_match, $ref_matchSize );
     if ( ( not $frag1 ) or ( not $frag2 ) ) {
         print STDERR "Skip read that aligns to an intron!\n";
         return 0;
     }
+    elsif ( ( defined $parameters{minOverhang} ) and ( ( length ( $frag1 ) < $parameters{minOverhang} ) or ( length ( $frag2 ) < $parameters{minOverhang} ) ) ) {
+        print STDERR "Skip read that does not contain enough overhang in either end!\n";
+        return 0;
+    }
 
     $frag2 = reverse ( $frag2 );
-    my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = _localAlignment ( $frag1, $frag2 );
+    my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
     if ( not $maxScore ) {
         print STDERR "Skip read that cannot be paired!\n";
         return 0; 
@@ -366,7 +376,9 @@ sub getSamPair
 
 sub getJuncPair
 {
-    my ( $chr1, $strand1, $donor, $pos1, $cigar1, $chr2, $strand2, $acceptor, $pos2, $cigar2 ) = @_;
+    my $chr1 = shift;  my $strand1 = shift;  my $donor = shift;  my $pos1 = shift;  my $cigar1 = shift;
+    my $chr2 = shift;  my $strand2 = shift;  my $acceptor = shift;  my $pos2 = shift;  my $cigar2 = shift;
+    my %parameters = @_;
 
     my $isIntron = 0;
     if ( ( $chr1 eq $chr2 ) and ( $strand1 eq $strand2 ) ) {
@@ -380,8 +392,13 @@ sub getJuncPair
 
     my $frag1 = getOneFragment ( $chr1, $strand1, $pos1, $cigar1 );
     my $frag2 = getOneFragment ( $chr2, $strand2, $pos2, $cigar2 );
+    if ( ( defined $parameters{minOverhang} ) and ( ( length ( $frag1 ) < $parameters{minOverhang} ) or ( length ( $frag2 ) < $parameters{minOverhang} ) ) ) {
+        print STDERR "Skip read that does not contain enough overhang in either end!\n";
+        return 0;
+    }
+
     $frag2 = reverse ( $frag2 );
-    my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = _localAlignment ( $frag1, $frag2 );
+    my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
     if ( not $maxScore ) {
         print STDERR "Skip junction that cannot be paired!\n";
         return 0; 
@@ -413,10 +430,10 @@ sub checkJuncIntron
 
     my $overlap = [];
     if ( ( defined $global{annotation}{intron_interval}{$chr} ) and ( defined $global{annotation}{intron_interval}{$chr}{$strand} ) ) {
-        $overlap = $global{annotation}{intron_interval}{$chr}{$strand}->fetch ( $pos1-$enviroment{intronFlanking}, $pos2+$enviroment{intronFlanking} );
+        $overlap = $global{annotation}{intron_interval}{$chr}{$strand}->fetch ( $pos1-$environment{intronFlanking}, $pos2+$environment{intronFlanking} );
     }
     foreach my $interval ( @{$overlap} ) {
-        if ( abs ( ( $interval->{start}-$pos1 ) < $enviroment{intronFlanking} ) and ( abs ( $interval->{end}-$pos2 ) < $enviroment{intronFlanking} ) ) {
+        if ( abs ( ( $interval->{start}-$pos1 ) < $environment{intronFlanking} ) and ( abs ( $interval->{end}-$pos2 ) < $environment{intronFlanking} ) ) {
             return 1;
         }
     }
@@ -618,9 +635,9 @@ sub getOneFragment
 {
     my ( $chr, $strand, $pos, $cigar ) = @_;
 
-    my $largestMatch = _parseCigar ( $cigar,  getLargestM => 1 );
+    my $largestMatch = parseCigar ( $cigar,  getLargestM => 1 );
     my $frag = substr ( $global{genomeSeq}->{$chr}, $pos-1, $largestMatch );
-    $frag = _reverseComplement ( $frag ) if ( $strand eq "-" );
+    $frag = reverseComplement ( $frag ) if ( $strand eq "-" );
 
     print STDERR join ( "\t", $frag, $pos, "\n" ) if ( $_debug );
     return $frag;
@@ -667,8 +684,8 @@ sub getBothFragment
     }
 
     if ( $strand eq "-" ) {
-        $frag1 = _reverseComplement ( $frag1 );
-        $frag2 = _reverseComplement ( $frag2 );
+        $frag1 = reverseComplement ( $frag1 );
+        $frag2 = reverseComplement ( $frag2 );
     }
 
     print STDERR join ( "\t", $frag1, $frag2, $pos1, $pos2, "\n" ) if ( $_debug );
@@ -682,7 +699,7 @@ sub maxND
     my $totalLen = eval ( join ( "+", @{$ref_matchSize} ) );
     my $overlap = [];
     if ( ( defined $global{annotation}{intron_interval}{$chr} ) and ( defined $global{annotation}{intron_interval}{$chr}{$strand} ) ) {
-        $overlap = $global{annotation}{intron_interval}{$chr}{$strand}->fetch ( $pos-$enviroment{intronFlanking}, $pos+$totalLen+$enviroment{intronFlanking} );
+        $overlap = $global{annotation}{intron_interval}{$chr}{$strand}->fetch ( $pos-$environment{intronFlanking}, $pos+$totalLen+$environment{intronFlanking} );
     }
 
     my $maxMatch = 0;  my $tmpMax = 0; 
@@ -699,7 +716,7 @@ sub maxND
             ## not intron
             my $isIntron = 0;
             foreach my $interval ( @{$overlap} ) {
-                if ( abs ( ( $interval->{start}-$oldPos ) < $enviroment{intronFlanking} ) and ( abs ( $interval->{end}-$pos ) < $enviroment{intronFlanking} ) ) {
+                if ( abs ( ( $interval->{start}-$oldPos ) < $environment{intronFlanking} ) and ( abs ( $interval->{end}-$pos ) < $environment{intronFlanking} ) ) {
                     $isIntron = 1;
                     last;
                 }
@@ -721,7 +738,7 @@ sub sortCluster
     my %removedCluster = ();
     foreach my $chr ( keys %{$global{dspInterval}} ) {
         foreach my $strand ( keys %{$global{dspInterval}{$chr}} ) {
-            my $removed = $global{dspInterval}{$chr}{$strand}->remove ( 1, $enviroment{maxChr}, 
+            my $removed = $global{dspInterval}{$chr}{$strand}->remove ( 1, $environment{maxChr}, 
                 sub { my $item = shift; return ( $item->{support} < $parameters{minSupport} ); });
             for ( my $idx = 0; $idx < scalar ( @{$removed} ); $idx++ ) { $removedCluster{$removed->[$idx]{id}} = 1; }
         }
@@ -748,7 +765,7 @@ sub sortCluster
 
     foreach my $chr ( keys %{$global{dspInterval}} ) {
         foreach my $strand ( keys %{$global{dspInterval}{$chr}} ) {
-            my $all = $global{dspInterval}{$chr}{$strand}->fetch ( 1, $enviroment{maxChr} );
+            my $all = $global{dspInterval}{$chr}{$strand}->fetch ( 1, $environment{maxChr} );
             for ( my $idx = 0; $idx < scalar ( @{$all} ); $idx++ ) {
                 if ( $all->[$idx]{id} < $all->[$idx]{pair} ) {
                     my $id = $all->[$idx]{id} . ":" . $all->[$idx]{pair};
@@ -894,7 +911,7 @@ sub reverseRead
     my $seq = shift;
 
     my $reverseSeq = "";
-    my $leadingS = _parseCigar ( $cigar,  getLeadingS => 1 );
+    my $leadingS = parseCigar ( $cigar,  getLeadingS => 1 );
     $reverseSeq = substr ( $seq, $leadingS );
     $reverseSeq .= substr ( $seq, 0, $leadingS );
 
@@ -940,519 +957,4 @@ sub printStem
     }
 
     return \$string;
-}
-
-
-sub _readIcSHAPE
-{
-    my $icSHAPE = shift;
-    my %parameters = @_;
-
-    my %trans_icSHAPE = ();
-    my $lineCount = 0;
-    open ( SH, $icSHAPE ) or die ( "Error in reading icSHAPE file $icSHAPE!\n" );
-    print "read icSHAPE file $icSHAPE...\n";
-    while ( my $line = <SH> ) {
-        $lineCount++;
-        chomp $line;
-
-        my ( $id, $length, $rpkm, @scores ) = split ( /\t/, $line );
-        $trans_icSHAPE{$id} = \@scores;
-    }
-    close SH;
-
-    return \%trans_icSHAPE;
-}
-
-sub _loadGenome
-{
-    my $fasta = shift;
-    my %parameters = @_;
-
-    my %chr_seq = ();
-    my $lineCount = 0;
-    open ( FA, $fasta ) or die ( "Error in reading fasta file $fasta!\n" );
-    print "read fasta file $fasta...\n\tTime:", `date`;
-    if ( $parameters{faidx} ) {
-
-    }
-    elsif ( $parameters{simple} ) {
-        while ( my $line = <FA> ) {
-            $lineCount++;
-            print "line: $lineCount\n\t", `date` if ( $lineCount % 1000000 == 0 );
-            chomp $line;
-            my $id = substr ( $line, 1 );
-            $id =~ s/^(\s+)//g;
-
-            $line = <FA>;
-            chomp $line;
-            $chr_seq{$id} = $line;
-        }
-    }
-    else {
-        my $id = "";
-        my $seq = "";
-        my $line = "";
-        while ( $line = <FA> ) {
-            $lineCount++;
-            print "line: $lineCount\n\t", `date` if ( $lineCount % 1000000 == 0 );
-            chomp $line;
-            if ( $line =~ /^>/ ) {
-                if ( $seq ) {
-                    $chr_seq{$id} = $seq;
-                    $seq = "";
-                }
-                $id = substr ( $line, 1 );
-                ( $id ) = split ( /\s/, $id );
-            }
-            else {
-                $seq .= $line;
-            }
-        }
-        $chr_seq{$id} = $seq if ( $seq );
-    }
-    close FA;
-
-    print "$lineCount lines read from file $fasta.\n\tTime:", `date`, "\n";
-    return \%chr_seq;
-}
-
-sub _loadGTF {
-    my $gtfFile = shift;
-    my %parameters = @_;
-
-    my %gene_info = (); my %transcript_info = (); my %exon_info = ();
-    my %gene_interval = (); my %intergenic_interval = (); my %transcript_interval = (); my %exon_interval = (); my %intron_interval = ();
-
-    my $lineCount = 0;
-    open ( GTF, $gtfFile ) or die ( "Error in reading GTF file $gtfFile!\n" );
-    print "read GTF file $gtfFile...\n\tTime:", `date`;
-    while ( my $line = <GTF> ) {
-        next if ( $line =~ /^#/ );
-        $lineCount++;
-        print "line: $lineCount\n\t", `date` if ( $lineCount % 100000 == 0 );
-        last if ( $_debug and ( $lineCount > 48 ) ); 
-
-        my ( $chr, $source, $class, $start, $end, $reserve, $strand, $reserve2, $info ) = split ( /\t/, $line );
-        if ( not defined $gene_interval{$chr} ) { 
-            $gene_interval{$chr}{"+"} = Set::IntervalTree->new;
-            $gene_interval{$chr}{"-"} = Set::IntervalTree->new;
-            $transcript_interval{$chr}{"+"} = Set::IntervalTree->new;
-            $transcript_interval{$chr}{"-"} = Set::IntervalTree->new;
-            $exon_interval{$chr}{"+"} = Set::IntervalTree->new;
-            $exon_interval{$chr}{"-"} = Set::IntervalTree->new;
-        }
-
-        my $geneID = "";  my $transcriptID = "";  my $exonID = "";  my $exonNum = 0;
-        my @data = split ( /; /, $info );
-        foreach my $field ( @data ) {
-            my $index = index ( $field, " " );
-            next if ( $index <= 0 );
-            my $type = substr ( $field, 0, $index ); 
-            if ( $type eq "gene_id" ) { $geneID = substr ( $field, $index+2, -1 ); }
-            elsif ( $type eq "transcript_id" ) { $transcriptID = substr ( $field, $index+2, -1 ); }
-            elsif ( $type eq "exon_id" ) { $exonID = substr ( $field, $index+2, -1 ); }
-            elsif ( $type eq "exon_number" ) { $exonNum = substr ( $field, $index+1 ); }
-        }
-
-        if ( ( $class eq "gene" ) and ( $geneID ) ) {
-            if ( defined $gene_info{$geneID} ) {
-                print STDERR "Warnning! skipping line $lineCount of repeated geneID: $geneID\n\t$line\n";
-                next;
-            }
-            $gene_info{$geneID}{chr} = $chr;
-            $gene_info{$geneID}{strand} = $strand;
-            $gene_info{$geneID}{start} = $start;
-            $gene_info{$geneID}{end} = $end;
-            $gene_interval{$chr}{$strand}->insert ( { 
-                    id => $geneID, 
-                    start => $start,
-                    end => $end }, $start, $end+1 );
-        }
-        if ( ( $class eq "transcript" ) and ( $transcriptID ) ) {
-            if ( not $geneID ) {
-                print STDERR "Warnning! skipping line $lineCount of no geneID:\n\t$line\n";
-                next;
-            }
-            if ( defined $transcript_info{$transcriptID} ) {
-                print STDERR "Warnning! skipping line $lineCount of repeated transcriptID: $transcriptID\n\t$line\n";
-                next;
-            }
-            push @{$gene_info{$geneID}{transcript}}, $transcriptID;
-            $transcript_info{$transcriptID}{gene} = $geneID;
-            $transcript_info{$transcriptID}{start} = $start;
-            $transcript_info{$transcriptID}{end} = $end;
-            $transcript_interval{$chr}{$strand}->insert ( { 
-                    id => $transcriptID, 
-                    gene => $geneID,
-                    start => $start,
-                    end => $end }, $start, $end+1 );
-        }
-        if ( ( $class eq "exon" ) and ( $exonID ) ) {
-            if ( not $transcriptID ) {
-                print STDERR "Warnning! skipping line $lineCount of no transcriptID:\n\t$line\n";
-                next;
-            }
-            elsif ( defined $transcript_info{$transcriptID}{exon}{$exonNum} ) {
-                print STDERR "Warnning! skipping line $lineCount of repeated exon_number $exonNum:\n\t$line\n";
-                next;
-            }
-
-            if ( defined $exon_info{$exonID} ) {
-                $transcript_info{$transcriptID}{exon}{$exonNum} = $exonID;
-                if ( ( $exon_info{$exonID}{start} != $start ) or ( $exon_info{$exonID}{end} != $end ) ) {
-                    print STDERR "Warnning! line $lineCount of repeated and inconsistent exonID $exonID:\n\t$line\n";
-                    $exonID .= "." . $lineCount;
-                    print STDERR "\tthe exon is renamed to $exonID.\n";
-                }
-            }
-
-            $transcript_info{$transcriptID}{exon}{$exonNum} = $exonID;
-            $exon_info{$exonID}{start} = $start;
-            $exon_info{$exonID}{end} = $end;
-            $exon_interval{$chr}{$strand}->insert ( { 
-                    id => $exonID, 
-                    transcript => $transcriptID,
-                    start => $start,
-                    end => $end }, $start, $end+1 );
-        }
-    }
-    close GTF;
-
-    _getIntergenic ( \%intergenic_interval, \%gene_info );
-    _getIntrons ( \%intron_interval, \%gene_info, \%transcript_info, \%exon_info );
-
-    if ( $_debug ) {
-        print STDERR "gene info:\n"; print STDERR Dumper \%gene_info;
-        print STDERR "gene interval:\n"; _printAnnotation ( \%gene_interval );
-        print STDERR "transcript info:\n"; print STDERR Dumper \%transcript_info;
-        print STDERR "transcript interval:\n"; _printAnnotation ( \%transcript_interval );
-        print STDERR "exon info:\n"; print STDERR Dumper \%exon_info;
-        print STDERR "exon interval:\n"; _printAnnotation ( \%exon_interval );
-        print STDERR "intron interval:\n"; _printAnnotation ( \%intron_interval );
-    }
-
-    return { 
-        gene_info           => \%gene_info, 
-        transcript_info     => \%transcript_info, 
-        exon_info           => \%exon_info, 
-
-        gene_interval       => \%gene_interval, 
-        intergenic_interval => \%intergenic_interval, 
-        transcript_interval => \%transcript_interval, 
-        exon_interval       => \%exon_interval, 
-        intron_interval     => \%intron_interval 
-    };
-}
-
-
-sub _getIntergenic
-{
-    1;
-}
-
-sub _getIntrons
-{
-    my $ref_intron_interval = shift;
-    my ( $ref_gene_info, $ref_transcript_info, $ref_exon_info ) = @_;
-
-    foreach my $geneID ( keys %{$ref_gene_info} ) {
-        my $chr = $ref_gene_info->{$geneID}{chr};
-        my $strand = $ref_gene_info->{$geneID}{strand};
-        if ( not defined $ref_intron_interval->{$chr}{$strand} ) { $ref_intron_interval->{$chr}{$strand} = Set::IntervalTree->new; }
-
-        foreach my $transcriptID ( @{$ref_gene_info->{$geneID}{transcript}} ) {
-            my $tStart = $ref_transcript_info->{$transcriptID}{start};
-            my $tEnd = $ref_transcript_info->{$transcriptID}{end};
-
-            my @exons = ();
-            if ( $strand eq "+" ) { @exons = sort { $a <=> $b } ( keys %{$ref_transcript_info->{$transcriptID}{exon}} ); }
-            elsif ( $strand eq "-" ) { @exons = sort { $b <=> $a } ( keys %{$ref_transcript_info->{$transcriptID}{exon}} ); }
-
-            $ref_transcript_info->{$transcriptID}{exonInError} = "";
-            my $exonID = $ref_transcript_info->{$transcriptID}{exon}{$exons[0]};
-            if ( $ref_exon_info->{$exonID}{start} != $tStart ) { 
-                print STDERR "ERROR in first exon for transcript: $transcriptID.\n"; 
-                $ref_transcript_info->{$transcriptID}{exonInError} .= "firstExonError;";
-            }
-            $exonID = $ref_transcript_info->{$transcriptID}{exon}{$exons[-1]};
-            if ( $ref_exon_info->{$exonID}{end} != $tEnd ) { 
-                print STDERR "ERROR in last exon for transcript: $transcriptID.\n"; 
-                $ref_transcript_info->{$transcriptID}{exonInError} .= "lastExonError;";
-            }
-
-            my $orderCheck = 0; my $eStart = 0; my $eEnd = 0;
-            foreach my $exonNum ( @exons ) {
-                my $exonID = $ref_transcript_info->{$transcriptID}{exon}{$exonNum};
-                if ( $eStart > $ref_exon_info->{$exonID}{start} ) {
-                    print STDERR "ERROR in exon order for transcript: $transcriptID.\n";  
-                    $orderCheck = 1;
-                    last;
-                }
-                else { $eStart = $ref_exon_info->{$exonID}{start}; }
-                if ( $eEnd > $ref_exon_info->{$exonID}{end} ) {
-                    print STDERR "ERROR in exon order for transcript: $transcriptID.\n";  
-                    $orderCheck = 1;
-                    last;
-                }
-                else { $eEnd = $ref_exon_info->{$exonID}{end}; }
-            }
-            if ( $orderCheck ) { $ref_transcript_info->{$transcriptID}{exonInError} .= "exonOrderError;"; }
-            if ( $ref_transcript_info->{$transcriptID}{exonInError} ) { 
-                $ref_transcript_info->{$transcriptID}{exonInError} =~ s/;$//; 
-                print STDERR "\t...exon in error, introns will not be calculated.\n";  
-                next; 
-            }
-
-            my $intronCount = 0; my $iStart = 0; my $iEnd = 0;
-            foreach my $exonNum ( @exons ) {
-                my $exonID = $ref_transcript_info->{$transcriptID}{exon}{$exonNum};
-                $eStart = $ref_exon_info->{$exonID}{start};
-                $eEnd = $ref_exon_info->{$exonID}{end};
-
-                if ( $eStart > $tStart ) { $iEnd = $eStart-1; }
-                if ( $iEnd ) {
-                    $intronCount++;
-                    $ref_intron_interval->{$chr}{$strand}->insert ( { 
-                            id => $intronCount, 
-                            transcript => $transcriptID,
-                            start => $iStart,
-                            end => $iEnd }, $iStart, $iEnd+1 );
-                }
-                if ( $eEnd < $tEnd ) { $iStart = $eEnd+1; }
-            }
-        }
-    }
-
-    1;
-}
-
-
-sub _printArray
-{
-    my $ref_array = shift;
-
-    for ( my $idx = 0; $idx < scalar ( @{$ref_array} ); $idx++ ) {
-        if ( not defined $ref_array->[$idx] ) { print STDERR "\tnotDefined"; }
-        elsif ( $ref_array->[$idx] eq "" ) { print STDERR "\tblank"; }
-        else { print STDERR "\t", $ref_array->[$idx]; }
-    }
-
-    1;
-}
-
-sub _reverseComplement
-{
-    my $inseq = shift;
-    my $outseq = reverse ( $inseq );
-
-    $outseq =~ tr/AGTCagtc/TCAGtcag/;
-    return $outseq;
-}
-
-sub _parseCigar
-{
-    my $cigar = shift;
-    my %parameters = @_;
-
-    my @match = split ( /[0-9]+/, $cigar );             # CIGAR: \*|([0-9]+[MIDNSHPX=])+
-    shift @match;
-    my @matchSize = split ( /[MIDNSHPX=]/, $cigar );
-
-    if ( $_debug ) {
-        print STDERR "CIGAR\t", $cigar, "\nmatchOper";
-        _printArray ( \@match );
-        print STDERR "\nmatchSize";
-        _printArray ( \@matchSize );
-        print STDERR "\n";
-    }
-
-    if ( $parameters{getLargestM} ) {
-        my $largestM = 0;
-        for ( my $idx = 0; $idx < scalar ( @match ); $idx++ ) {
-            if ( $match[$idx] eq "M" ) {
-                if ( $matchSize[$idx] > $largestM ) {
-                    $largestM = $matchSize[$idx];
-                }
-            }
-        }
-
-        return $largestM;
-    }
-    if ( $parameters{getLeadingS} ) {
-        if ( $match[0] ne "S" ) {
-            print STDERR "Warning! unexpected CIGAR string: $cigar!\n";
-            return 0;
-        }
-        else { return $matchSize[0]; }
-    }
-    elsif ( $parameters{getMatchLen} ) {
-    }
-    else {
-        return ( \@match, \@matchSize );
-    }
-
-    1;
-}
-
-sub _localAlignment
-{
-    my ($seq1, $seq2) = @_;
-
-    # # initialization
-    my @matrix;
-    $matrix[0][0]{score}   = 0;
-    $matrix[0][0]{pointer} = "none";
-    for(my $j = 1; $j <= length($seq1); $j++) {
-        $matrix[0][$j]{score}   = 0;
-        $matrix[0][$j]{pointer} = "none";
-    }
-    for (my $i = 1; $i <= length($seq2); $i++) {
-        $matrix[$i][0]{score}   = 0;
-        $matrix[$i][0]{pointer} = "none";
-    }
-
-    # fill
-    my $maxScore = 0; my $maxI = 0; my $maxJ = 0;
-    for(my $i = 1; $i <= length($seq2); $i++) {
-        for(my $j = 1; $j <= length($seq1); $j++) {
-            my ($diagonalScore, $leftScore, $upScore);
-
-            # calculate match score
-            my $pair = substr($seq1, $j-1, 1) . substr($seq2, $i-1, 1);
-            $diagonalScore = $matrix[$i-1][$j-1]{score}+$enviroment{matchEnergy}{$pair};
-
-            # calculate gap scores
-            $upScore   = $matrix[$i-1][$j]{score}+$enviroment{gapPenalty};
-            $leftScore = $matrix[$i][$j-1]{score}+$enviroment{gapPenalty};
-
-            if ($diagonalScore <= 0 and $upScore <= 0 and $leftScore <= 0) {
-                $matrix[$i][$j]{score}   = 0;
-                $matrix[$i][$j]{pointer} = "none";
-                next; # terminate this iteration of the loop
-            }
-
-            # choose best score
-            if ($diagonalScore >= $upScore) {
-                if ($diagonalScore >= $leftScore) {
-                    $matrix[$i][$j]{score}   = $diagonalScore;
-                    $matrix[$i][$j]{pointer} = "diagonal";
-                }
-                else {
-                    $matrix[$i][$j]{score}   = $leftScore;
-                    $matrix[$i][$j]{pointer} = "left";
-                }
-            } 
-            else {
-                if ($upScore >= $leftScore) {
-                    $matrix[$i][$j]{score}   = $upScore;
-                    $matrix[$i][$j]{pointer} = "up";
-                }
-                else {
-                    $matrix[$i][$j]{score}   = $leftScore;
-                    $matrix[$i][$j]{pointer} = "left";
-                }
-            }
-
-            # set maximum score
-            if ($matrix[$i][$j]{score} > $maxScore) {
-                $maxI     = $i;
-                $maxJ     = $j;
-                $maxScore = $matrix[$i][$j]{score};
-            }
-        }
-    }
-
-    # trace-back
-    my $align1 = ""; my $align2 = "";
-    my $i = $maxI; my $j = $maxJ;
-    while (1) {
-        last if $matrix[$i][$j]{pointer} eq "none";
-
-        if ($matrix[$i][$j]{pointer} eq "diagonal") {
-            $align1 .= substr($seq1, $j-1, 1);
-            $align2 .= substr($seq2, $i-1, 1);
-            $i--; $j--;
-        }
-        elsif ($matrix[$i][$j]{pointer} eq "left") {
-            $align1 .= substr($seq1, $j-1, 1);
-            $align2 .= "-";
-            $j--;
-        }
-        elsif ($matrix[$i][$j]{pointer} eq "up") {
-            $align1 .= "-";
-            $align2 .= substr($seq2, $i-1, 1);
-            $i--;
-        }   
-    }
-
-    my $align = ( reverse $align1 ) . ":" . $align2;
-    if ( $_debug ) {
-        print STDERR "local alignment input seq1: ", $seq1, ", input seq2: ", reverse ( $seq2 ), "\n";
-        print STDERR "alignment: ", $align, ", max score: ", $maxScore, "\n";
-    }
-
-    return ( $maxScore, $align, $j+1, $maxJ, $i+1, $maxI);
-}
-
-## obsolete
-#  directly get fragment from read, no use of reference genome
-sub _getFragmentFromRead
-{
-    my $seq = shift;
-    my $ref_match = shift;
-    my $ref_matchSize = shift;
-
-    my $maxMatch = _maxND ( $ref_match, $ref_matchSize );
-
-    my $pos = 0; my $pos1 = 0; my $pos2 = 0;
-    my $frag1 = "";
-    for ( my $idx = 0; $idx <= $maxMatch; $idx++ ) {
-        if ( ( $ref_match->[$idx] eq "S" ) or ( $ref_match->[$idx] eq "H" ) or ( $ref_match->[$idx] eq "I" ) ) { 
-            $pos += $ref_matchSize->[$idx];
-        }
-        elsif ( ( $ref_match->[$idx] eq "M" ) or ( $ref_match->[$idx] eq "=" ) or ( $ref_match->[$idx] eq "X" ) ) { 
-            $frag1 .= substr ( $seq, $pos, $ref_matchSize->[$idx] );
-            $pos += $ref_matchSize->[$idx];
-            $pos2 += $ref_matchSize->[$idx];
-        }
-        elsif ( $ref_match->[$idx] eq "D" ) {
-            ## frag should include the deleted bases, while pos no change
-            $pos2 += $ref_matchSize->[$idx];
-        }
-        elsif ( ( $ref_match->[$idx] eq "P" ) or ( $ref_match->[$idx] eq "N" ) ) { 
-            $pos2 += $ref_matchSize->[$idx];
-        };
-    }
-    my $frag2 = "";
-    for ( my $idx = $maxMatch+1; $idx < scalar ( @{$ref_matchSize} ); $idx++ ) {
-        if ( ( $ref_match->[$idx] eq "S" ) or ( $ref_match->[$idx] eq "H" ) or ( $ref_match->[$idx] eq "I" ) ) { 
-            $pos += $ref_matchSize->[$idx]; 
-        }
-        elsif ( ( $ref_match->[$idx] eq "M" ) or ( $ref_match->[$idx] eq "=" ) or ( $ref_match->[$idx] eq "X" ) ) { 
-            $frag2 .= substr ( $seq, $pos, $ref_matchSize->[$idx] );
-            $pos += $ref_matchSize->[$idx];
-        }
-        elsif ( $ref_match->[$idx] eq "D" ) {
-            ## frag should include the deleted bases, while pos no change
-        }
-        elsif ( ( $ref_match->[$idx] eq "P" ) or ( $ref_match->[$idx] eq "N" ) ) { };
-    }
-
-    print STDERR join ( "\t", $frag1, $frag2, $pos1, $pos2, "\n" ) if ( $_debug );
-    return ( $frag1, $frag2, $pos1, $pos2 );
-}
-
-sub _printAnnotation 
-{
-    my $ref_annotation = shift;
-    foreach my $chr ( keys %{$ref_annotation} ) {
-        foreach my $strand ( keys %{$ref_annotation->{$chr}} ) {
-        print STDERR "\t$chr\t$strand\n";
-            my $all = $ref_annotation->{$chr}{$strand}->fetch ( 1, $enviroment{maxChr} );
-            print STDERR Dumper $all;
-        }
-    }
-
-    1;
 }
