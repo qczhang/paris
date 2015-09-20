@@ -20,27 +20,37 @@ my %enviroment = (
 );
 
 my %global = (
-    bw => 100000
+    bw => 100000,
+    filter => "onlyIntra"
 );
 
 #
 ##--------------------------------------------------
 #
 my $readGroup = shift;
+my $supportSAM = shift;
 my $output = shift;
 
-&main ( $readGroup, $output );
+&main ( $readGroup, $supportSAM, $output );
 sub main
 {
     my $readGroupFile = shift;
+    my $supportSAMfile = shift;
     my $outputFile = shift;
+
+    my %readGroup = ();
+    my %supportReads = ();
 
     my $ref_annotation = readGTF_ensembl_new ( $enviroment{annotationFile} );
     my $ref_bin = binize ( $ref_annotation->{gene_info}, $ref_annotation->{chr_size}, bw => $global{bw} );
 
-    my %supportReads = ();
     my $memoryUsage = Memory::Usage->new(); $memoryUsage->record('starting work');
-    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, onlyIntra => 1 );
+
+    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, filter => $global{filter} );
+    my $validReads = loadSupportSam ( $supportSAMfile, \%supportReads  );
+
+    my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$global{filter}.sam/;
+    printSupportSam ( \%supportReads, $filteredSAMfile );
 
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
 
@@ -73,7 +83,7 @@ sub loadReadGroup
 	    &convert ( \@overlapRegion2, $chr2, $strand2, $start2, $end2, $ref_annotation, $ref_bin, bw => $parameters{bw} );
 
 	    my $transcriptLine = "";
-	    if ( $parameters{onlyIntra} ) {
+	    if ( $parameters{filter} eq "onlyIntra") {
 		for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /2); $idx1++ ) {
 		    for ( my $idx2 = 0; $idx2 < (scalar (@overlapRegion2) /2); $idx2++ ) {
 			if ( $overlapRegion1[2*$idx1] eq $overlapRegion2[2*$idx2] ) {
@@ -82,7 +92,7 @@ sub loadReadGroup
 		    }
 		}
 	    }
-	    elsif ( $parameters{onlyInter} ) {
+	    elsif ( $parameters{filter} eq "onlyInter" ) {
 		for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /2); $idx1++ ) {
 		    for ( my $idx2 = 0; $idx2 < (scalar (@overlapRegion2) /2); $idx2++ ) {
 			if ( $overlapRegion1[2*$idx1] ne $overlapRegion2[2*$idx2] ) {
@@ -91,14 +101,14 @@ sub loadReadGroup
 		    }
 		}
 	    } 
-	    elsif ( $parameters{requireBothAnnotation} ) {
+	    elsif ( $parameters{filter} eq "requireBothAnnotation" ) {
 		for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /2); $idx1++ ) {
 		    for ( my $idx2 = 0; $idx2 < (scalar (@overlapRegion2) /2); $idx2++ ) {
 		    	$transcriptLine .= $overlapRegion1[2*$idx1] . "\t" . $overlapRegion1[2*$idx1+1] . "\t<=>\t" . $overlapRegion2[2*$idx2] . "\t" . $overlapRegion2[2*$idx2+1] . "\n";
 		    }
 		}
 	    } 
-	    elsif ( $parameters{requireAnnotation} ) {
+	    elsif ( $parameters{filter} eq "requireAnnotation" ) {
 		if ( ( scalar(@overlapRegion1) ) and ( scalar (@overlapRegion2) ) ) {
 		    for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /2); $idx1++ ) {
 		    	for ( my $idx2 = 0; $idx2 < (scalar (@overlapRegion2) /2); $idx2++ ) {
@@ -126,10 +136,11 @@ sub loadReadGroup
 	    $line = <RG>;
 	    print OUT $line if ( $transcriptLine );
 	    INNER: while ( $line =<RG> ) {
-	       print OUT $line if ( $transcriptLine );
-
-	       my @support = split ( /\s+/, $line );
-	       if ( $support[0] ) { $ref_supportReads->{$support[0]} = 1; }
+	       if ( $transcriptLine ) {
+		   print OUT $line;
+		   my @support = split ( /\s+/, $line );
+		   if ( $support[0] ) { $ref_supportReads->{$support[0]}{sam} = ""; }
+		}
 	       last INNER if ( not ( $line =~ /\S/ ) );
        	    }
 	}
@@ -140,6 +151,55 @@ sub loadReadGroup
     return $readGroupCount;
 }
 
+
+sub loadSupportSam
+{
+    my $supportSamFile = shift;
+    my $ref_supportReads = shift;
+    my %parameters = @_;
+
+    my $totalReads = 0; my $validReads = 0;
+    my %pos_reads = ();
+    open ( SP, $supportSamFile );
+    while ( my $line = <SP> ) {
+	my @data = split ( /\t/, $line );
+	if ( defined $ref_supportReads->{$data[0]} ) {
+	    $validReads++;
+	    $ref_supportReads->{$data[0]}{sam} = $line;
+	    my $posMatch = $data[2] . ":" . $data[3] . ":" . $data[5];
+
+	    if ( defined $parameters{checkPCRduplicates} ) {
+		if ( defined $pos_reads{$posMatch} ) { 
+		    $ref_supportReads->{$pos_reads{$posMatch}}{duplicate} = $posMatch; 
+		    $ref_supportReads->{$data[0]}{duplicate} = $posMatch; 
+		}
+		else { $pos_reads{$posMatch} = $data[0]; }
+	    }
+	}
+    }
+    close SP;
+
+    print STDERR "$validReads valid reads in total!\n";
+    return $validReads;
+}
+
+
+sub printSupportSam
+{
+    my $ref_supportReads = shift;
+    my $outputFile = shift;
+
+    open ( OUT, ">$outputFile" ) or die "Cannot open $outputFile for writing!\n";
+    foreach my $readID ( keys %{$ref_supportReads} ) {
+	if ( $ref_supportReads->{$readID}{group} >=0 ) {
+	    if ( not defined $ref_supportReads->{$readID}{sam} ) { print STDERR "Warning! Skipping unrecognized read $readID\n"; }
+	    print OUT $ref_supportReads->{$readID}{sam};
+	}
+    }
+    close OUT;
+
+    1;
+}
 ## ------------------------------------
 sub binize
 {
