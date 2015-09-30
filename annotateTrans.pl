@@ -8,8 +8,8 @@ use Time::HiRes;
 use Memory::Usage;
 use Set::IntervalTree;
 #
-use lib "/Share/home/zhangqf/cliff/icshape/module";
-use icSHAPEutil qw( &readGTF_ensembl_new );
+use lib "module";
+use PARISutil qw( &readGTF_ensembl_new );
 
 ##--------------------------------------------------
 #
@@ -21,35 +21,47 @@ my %enviroment = (
 
 my %global = (
     bw => 100000,
-    filter => "onlyIntra"
 );
 
-#
-##--------------------------------------------------
-#
-my $readGroup = shift;
-my $supportSAM = shift;
-my $output = shift;
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_s $opt_a $opt_o $opt_f );
+&getopts('hVDi:s:a:o:f:');
 
-&main ( $readGroup, $supportSAM, $output );
-sub main
-{
-    my $readGroupFile = shift;
-    my $supportSAMfile = shift;
-    my $outputFile = shift;
+my $usage = <<_EOH_;
+## --------------------------------------
+annotate with transcriptome annotation
+Command:
+$0 -i read_group_file -s support_sam -o output_annotated_file
+# what it is:
+ -i     input read group file
+ -s     input support sam file
+ -o     output annotated file
+# more options:
+ -a	annotation GTF file
+ -f     filter ("onlyIntra")
+_EOH_
+;
+
+&main();
+
+sub main {
+    my %parameters = &init();
+
+    my $readGroupFile = $parameters{readGroupFile};
+    my $supportSAMfile = $parameters{supportSamFile};
+    my $outputFile = $parameters{output};
 
     my %readGroup = ();
     my %supportReads = ();
 
-    my $ref_annotation = readGTF_ensembl_new ( $enviroment{annotationFile} );
+    my $ref_annotation = readGTF_ensembl_new ( $parameters{annotationFile} );
     my $ref_bin = binize ( $ref_annotation->{gene_info}, $ref_annotation->{chr_size}, bw => $global{bw} );
 
     my $memoryUsage = Memory::Usage->new(); $memoryUsage->record('starting work');
 
-    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, filter => $global{filter} );
+    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, filter => $parameters{filter} );
     my $validReads = loadSupportSam ( $supportSAMfile, \%supportReads  );
 
-    my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$global{filter}.sam/;
+    my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$parameters{filter}.sam/;
     printSupportSam ( \%supportReads, $filteredSAMfile );
 
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
@@ -58,6 +70,24 @@ sub main
 }
 
 ## ----------------------------------
+sub init {
+    my %parameters = ();
+
+    die $usage if ( $opt_h || ( not $opt_i ) || ( not $opt_s ) || ( not $opt_o ) );
+    $opt_V = 0 if ( not defined $opt_V );
+    $opt_D = 0 if ( not defined $opt_D );
+
+    if ( defined $opt_i ) { $parameters{readGroupFile} = $opt_i; }
+    if ( defined $opt_s ) { $parameters{supportSamFile} = $opt_s; }
+    if ( defined $opt_o ) { $parameters{output} = $opt_o; }
+
+    if ( defined $opt_a ) { $parameters{annotationFile} = $opt_a; }
+    else  {  $parameters{annotationFile} = $enviroment{annotationFile};  }
+    if ( defined $opt_f ) { $parameters{filter} = $opt_f; }
+
+    return ( %parameters );
+}
+
 sub loadReadGroup
 {
     my $readGroupFile = shift;
