@@ -8,7 +8,7 @@ use Time::HiRes;
 use Memory::Usage;
 use Set::IntervalTree;
 
-use lib "/Share/home/zhangqf/cliff/paris/module";
+use lib "module";
 use PARISutil qw( &loadGTF &loadGenome &parseCigar &reverseComplement &localAlignment );
 #
 ##--------------------------------------------------
@@ -43,27 +43,46 @@ my %global = (
 #
 ##--------------------------------------------------
 #
-my $inputSam = shift;
-my $chiastic = shift;
-my $output = shift;
-my $chiasticSupport = shift;
 
-my $refSeq = shift; if ( $refSeq and ( $refSeq ne "NULL" ) ) { $environment{genomeFile} = $refSeq; }
-my $annotation = shift; if ( $annotation and ( $annotation ne "NULL" ) ) { $environment{annotationFile} = $annotation; }
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p );
+&getopts('hVDi:j:s:o:g:a:t:l:p:');
 
-&main ( $inputSam, $chiastic, $output, $chiasticSupport );
+my $usage = <<_EOH_;
+## --------------------------------------
+call base pair groups from PARIS sequencing
+Command:
+$0 -i input_sam_file -j chiastic_junction_file -s chiastic_support_sam_file -o output_read_group
+# what it is:
+ -i     input sam file of spliced alignment
+ -j     chiastic junction file
+ -s	chiastic junction support alignment file
+ -o	output base pair groups
+# more options:
+ -g     genome file
+ -a     annotation file
+ -t     transcriptome file
+
+ -l	minimum overhang length for valid mapping
+ -p	minimum number of supporting reads 
+_EOH_
+;
+
+&main();
+
+
 sub main
 {
-    my $samFileList = shift;
-    my $chiasticFileList = shift;
-    my $outputFile = shift;
-    my $chiasticSamFileList = shift;
-    my %parameters = @_;
+    my %parameters = &init();
+
+    my $samFileList = $parameters{samFiles};
+    my $chiasticFileList = $parameters{chiasticFiles};
+    my $chiasticSamFileList = $parameters{chiasticSamFiles};
+    my $outputFile = $parameters{output};
 
     my $memoryUsage = Memory::Usage->new(); $memoryUsage->record('starting work');
-    $global{annotation} = loadGTF ( $environment{annotationFile} );
+    $global{annotation} = loadGTF ( $parameters{annotationFile} );
     $memoryUsage->record('Memory after GTF loading'); $memoryUsage->dump();
-    $global{genomeSeq} = loadGenome ( $environment{genomeFile} );
+    $global{genomeSeq} = loadGenome ( $parameters{genomeFile} );
     $memoryUsage->record('Memory after genome loading'); $memoryUsage->dump();
 
     my $allSupportSam = "";
@@ -81,7 +100,7 @@ sub main
     }
     $memoryUsage->record('Memory after chiastic junction file process'); $memoryUsage->dump();
 
-    sortCluster ( minSupport => $environment{minSupport} );
+    sortCluster ( minSupport => $parameters{minSupport} );
     $memoryUsage->record('Memory after cluster sorting'); $memoryUsage->dump();
     printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam );
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
@@ -90,6 +109,28 @@ sub main
 }
 
 ## ----------------------------------
+sub init {
+    my %parameters = ();
+
+    die $usage if ( $opt_h || ( not $opt_i ) || ( ( not $opt_j ) && ( not $opt_s ) ) || ( not $opt_o ) );
+    $opt_V = 0 if ( not defined $opt_V );
+    $opt_D = 0 if ( not defined $opt_D );
+
+    if ( defined $opt_i ) { $parameters{samFiles} = $opt_i; }
+    if ( defined $opt_j ) { $parameters{chiasticFiles} = $opt_j; }
+    if ( defined $opt_s ) { $parameters{chiasticSamFiles} = $opt_s; }
+    if ( defined $opt_o ) { $parameters{output} = $opt_o; }
+
+    if ( defined $opt_g ) { $parameters{genomeFile} = $opt_g; }
+    if ( defined $opt_a ) { $parameters{annotationFile} = $opt_g; }
+    if ( defined $opt_t ) { $parameters{transcriptomeFile} = $opt_t; }
+
+    if ( defined $opt_l ) { $environment{minOverhang} = $opt_l; }
+    if ( defined $opt_p ) { $parameters{minSupport} = $opt_p; }
+
+    return ( %parameters );
+}
+
 sub genPairClusterFromSamFile
 {
     my $samFile = shift;
