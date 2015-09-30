@@ -7,6 +7,8 @@ use Data::Dumper;
 use Time::HiRes;
 use Memory::Usage;
 use Set::IntervalTree;
+use Getopt::Std;
+
 #
 use lib "module";
 use PARISutil qw( &readGTF_ensembl_new );
