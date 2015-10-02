@@ -39,7 +39,7 @@ $0 -i read_group_file -s support_sam -o output_annotated_file
  -o     output annotated file
 # more options:
  -a	annotation GTF file
- -f     filter ("onlyIntra")
+ -f     filter ("onlyIntra|onlyInter|requireBothAnnotation|requireAnnotation")
 _EOH_
 ;
 
