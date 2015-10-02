@@ -123,7 +123,7 @@ sub init {
     if ( defined $opt_o ) { $parameters{output} = $opt_o; }
 
     if ( defined $opt_g ) { $parameters{genomeFile} = $opt_g; }
-    if ( defined $opt_a ) { $parameters{annotationFile} = $opt_g; }
+    if ( defined $opt_a ) { $parameters{annotationFile} = $opt_a; }
     if ( defined $opt_t ) { $parameters{transcriptomeFile} = $opt_t; }
 
     if ( defined $opt_l ) { $environment{minOverhang} = $opt_l; }
@@ -174,7 +174,7 @@ sub genPairClusterFromSamLine
     my $strand = ( $data[1] & 16 ) ? "-" : "+";
     my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
     if ( not $alignment ) {
-        print STDERR "\t$line\n";
+        print STDERR "\t$line\n" if ( $opt_V );
         return 0;
     }
 
@@ -255,6 +255,7 @@ sub genPairClusterFromOneJunction
         else { print STDERR "\t$line\n"; return 0; }
     }
     if ( not $cigar ) {  print STDERR "\tSkip line of inapproprieate alignment: $line\n";  return 0;  }
+
     my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = 
 	getJuncPair ( $data[0], $data[2], $data[1], $data[10], $data[11], $data[3], $data[5], $data[4], $data[12], $data[13], minOverhang => $environment{minOverhang} );
     if ( not $alignment ) { print STDERR "\t$line\n"; return 0; }
@@ -314,7 +315,7 @@ sub getNewCigar
 	    #if ( $ref_match2->[0] eq "S" ) { 
 	    #    $lenN -= $ref_matchSize2->[0];
 	    #}
-            if ( $lenN <= 0 ) {  $cigar = 0;  }
+            if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
                 for ( my $idx = 1; $idx < scalar ( @{$ref_match2} ); $idx++ ) { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
@@ -331,7 +332,7 @@ sub getNewCigar
 	    #if ( $ref_match1->[0] eq "S" ) { 
 	    #    $lenN -= $ref_matchSize1->[0];
 	    #}
-            if ( $lenN <= 0 ) {  $cigar = 0;  }
+            if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
                 for ( my $idx = 1; $idx < scalar ( @{$ref_match1} ); $idx++ ) { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
@@ -342,29 +343,47 @@ sub getNewCigar
         if ( $strand eq "+" ) {
             my $lenN = $start1 - $start2;
             for ( my $idx = 1; $idx < scalar ( @{$ref_match2} ); $idx++ ) { 
-                $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; 
+                if ( $ref_match2->[$idx] eq "S" )  { $cigar .= $ref_matchSize2->[$idx] . "M"; }
+		else  { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
+
                 if ( ( $ref_match2->[$idx] eq "M" ) or ( $ref_match2->[$idx] eq "=" ) or ( $ref_match2->[$idx] eq "X" ) or ( $ref_match2->[$idx] eq "D" ) or ( $ref_match2->[$idx] eq "N" ) or ( $ref_match2->[$idx] eq "S" ) ) { 
                     $lenN -= $ref_matchSize2->[$idx];
                 }
             }
-            if ( $lenN <= 0 ) {  $cigar = 0;  }
+	    if ( $ref_match1->[0] eq "S" ) {
+                $lenN -= $ref_matchSize1->[0];
+	    }
+            if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
-                for ( my $idx = 0; $idx < scalar ( @{$ref_match1} - 1 ); $idx++ ) { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
+                for ( my $idx = 0; $idx < scalar ( @{$ref_match1} - 1 ); $idx++ ) { 
+		    if ( ( $ref_match1->[$idx] ne "S" ) and ( $ref_match1->[$idx] ne "H" ) ) {
+		        $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; 
+		    }
+		}
             }
         }
         if ( $strand eq "-" ) {
             my $lenN = $start2 - $start1;
             for ( my $idx = 1; $idx < scalar ( @{$ref_match1} ); $idx++ ) { 
-                $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx];  
+                if ( $ref_match1->[$idx] eq "S" )  { $cigar .= $ref_matchSize1->[$idx] . "M"; }
+		else  { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
+
                 if ( ( $ref_match1->[$idx] eq "M" ) or ( $ref_match1->[$idx] eq "=" ) or ( $ref_match1->[$idx] eq "X" ) or ( $ref_match1->[$idx] eq "D" ) or ( $ref_match1->[$idx] eq "N" ) or ( $ref_match1->[$idx] eq "S" ) ) { 
                     $lenN -= $ref_matchSize1->[$idx];
                 }
             }
-            if ( $lenN <= 0 ) {  $cigar = 0;  }
+	    if ( $ref_match2->[0] eq "S" ) {
+                $lenN -= $ref_matchSize2->[0];
+	    }
+            if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
-                for ( my $idx = 0; $idx < scalar ( @{$ref_match2} - 1 ); $idx++ ) { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
+                for ( my $idx = 0; $idx < scalar ( @{$ref_match2} - 1 ); $idx++ ) { 
+		    if ( ( $ref_match2->[$idx] ne "S" ) and ( $ref_match2->[$idx] ne "H" ) ) {
+		        $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; 
+		    }
+		}
             }
         }
     }
@@ -384,7 +403,7 @@ sub getSamPair
         return 0;
     }
     elsif ( ( defined $parameters{minOverhang} ) and ( ( length ( $frag1 ) < $parameters{minOverhang} ) or ( length ( $frag2 ) < $parameters{minOverhang} ) ) ) {
-        print STDERR "Skip read that does not contain enough overhang in either end!\n";
+        print STDERR "Skip read that does not contain enough overhang in either end!\n" if ( $opt_V );
         return 0;
     }
 

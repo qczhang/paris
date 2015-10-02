@@ -234,7 +234,7 @@ sub loadGTF
 
     my $lineCount = 0;
     open ( GTF, $gtfFile ) or die ( "Error in reading GTF file $gtfFile!\n" );
-    print "read GTF file $gtfFile...\n\tTime:", `date`;
+    print STDERR "read GTF file $gtfFile...\n\tTime:", `date`;
     while ( my $line = <GTF> ) {
         next if ( $line =~ /^#/ );
         $lineCount++;
