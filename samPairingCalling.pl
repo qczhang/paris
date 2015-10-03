@@ -350,6 +350,7 @@ sub getNewCigar
                     $lenN -= $ref_matchSize2->[$idx];
                 }
             }
+	    if ( $ref_match1->[0] eq "S" )  { $lenN -= $ref_matchSize1->[0]; }
             if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
@@ -369,6 +370,7 @@ sub getNewCigar
                     $lenN -= $ref_matchSize1->[$idx];
                 }
             }
+	    if ( $ref_match2->[0] eq "S" )  { $lenN -= $ref_matchSize2->[0]; }
             if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
