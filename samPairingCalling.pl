@@ -350,16 +350,12 @@ sub getNewCigar
                     $lenN -= $ref_matchSize2->[$idx];
                 }
             }
-	    if ( $ref_match1->[0] eq "S" ) {
-                $lenN -= $ref_matchSize1->[0];
-	    }
             if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
                 for ( my $idx = 0; $idx < scalar ( @{$ref_match1} - 1 ); $idx++ ) { 
-		    if ( ( $ref_match1->[$idx] ne "S" ) and ( $ref_match1->[$idx] ne "H" ) ) {
-		        $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; 
-		    }
+                    if ( $ref_match1->[$idx] eq "S" )  { $cigar .= $ref_matchSize1->[$idx] . "M"; }
+		    else  { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
 		}
             }
         }
@@ -373,16 +369,12 @@ sub getNewCigar
                     $lenN -= $ref_matchSize1->[$idx];
                 }
             }
-	    if ( $ref_match2->[0] eq "S" ) {
-                $lenN -= $ref_matchSize2->[0];
-	    }
             if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
                 for ( my $idx = 0; $idx < scalar ( @{$ref_match2} - 1 ); $idx++ ) { 
-		    if ( ( $ref_match2->[$idx] ne "S" ) and ( $ref_match2->[$idx] ne "H" ) ) {
-		        $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; 
-		    }
+                    if ( $ref_match2->[$idx] eq "S" )  { $cigar .= $ref_matchSize2->[$idx] . "M"; }
+		    else  { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
 		}
             }
         }
