@@ -344,40 +344,40 @@ sub getNewCigar
             my $lenN = $start1 - $start2;
             for ( my $idx = 1; $idx < scalar ( @{$ref_match2} ); $idx++ ) { 
                 if ( $ref_match2->[$idx] eq "S" )  { $cigar .= $ref_matchSize2->[$idx] . "M"; }
-		else  { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
+		        else  { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
 
                 if ( ( $ref_match2->[$idx] eq "M" ) or ( $ref_match2->[$idx] eq "=" ) or ( $ref_match2->[$idx] eq "X" ) or ( $ref_match2->[$idx] eq "D" ) or ( $ref_match2->[$idx] eq "N" ) or ( $ref_match2->[$idx] eq "S" ) ) { 
                     $lenN -= $ref_matchSize2->[$idx];
                 }
             }
-	    if ( $ref_match1->[0] eq "S" )  { $lenN -= $ref_matchSize1->[0]; }
+	        if ( $ref_match1->[0] eq "S" )  { $lenN -= $ref_matchSize1->[0]; }
             if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
                 for ( my $idx = 0; $idx < scalar ( @{$ref_match1} - 1 ); $idx++ ) { 
                     if ( $ref_match1->[$idx] eq "S" )  { $cigar .= $ref_matchSize1->[$idx] . "M"; }
-		    else  { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
-		}
-            }
+		            else  { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
+                }
+		    }
         }
         if ( $strand eq "-" ) {
             my $lenN = $start2 - $start1;
             for ( my $idx = 1; $idx < scalar ( @{$ref_match1} ); $idx++ ) { 
                 if ( $ref_match1->[$idx] eq "S" )  { $cigar .= $ref_matchSize1->[$idx] . "M"; }
-		else  { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
+		        else  { $cigar .= $ref_matchSize1->[$idx] . $ref_match1->[$idx]; }
 
                 if ( ( $ref_match1->[$idx] eq "M" ) or ( $ref_match1->[$idx] eq "=" ) or ( $ref_match1->[$idx] eq "X" ) or ( $ref_match1->[$idx] eq "D" ) or ( $ref_match1->[$idx] eq "N" ) or ( $ref_match1->[$idx] eq "S" ) ) { 
                     $lenN -= $ref_matchSize1->[$idx];
                 }
             }
-	    if ( $ref_match2->[0] eq "S" )  { $lenN -= $ref_matchSize2->[0]; }
+	        if ( $ref_match2->[0] eq "S" )  { $lenN -= $ref_matchSize2->[0]; }
             if ( $lenN < 0 ) {  $cigar = 0;  }
             else {
                 $cigar .= $lenN . "N";
                 for ( my $idx = 0; $idx < scalar ( @{$ref_match2} - 1 ); $idx++ ) { 
                     if ( $ref_match2->[$idx] eq "S" )  { $cigar .= $ref_matchSize2->[$idx] . "M"; }
-		    else  { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
-		}
+		            else  { $cigar .= $ref_matchSize2->[$idx] . $ref_match2->[$idx]; }
+		        }
             }
         }
     }
@@ -839,7 +839,8 @@ sub sortCluster
                     $global{dsPairCluster}{$id}{end2} = $all->[$idx]{end}-1;
                 }
             }
-    print Dumper $all;
+
+            print Dumper $all if ( $_debug );
         }
     }
 
