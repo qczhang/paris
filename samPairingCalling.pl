@@ -45,8 +45,8 @@ my %global = (
 ##--------------------------------------------------
 #
 
-use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p );
-&getopts('hVDi:j:s:o:g:a:t:l:p:');
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z );
+&getopts('hVDi:j:s:o:g:a:t:l:p:z:');
 
 my $usage = <<_EOH_;
 ## --------------------------------------
@@ -101,7 +101,7 @@ sub main
     }
     $memoryUsage->record('Memory after chiastic junction file process'); $memoryUsage->dump();
 
-    sortCluster ( minSupport => $parameters{minSupport} );
+    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
     $memoryUsage->record('Memory after cluster sorting'); $memoryUsage->dump();
     printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam );
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
@@ -123,6 +123,7 @@ sub init {
     if ( defined $opt_o ) { $parameters{output} = $opt_o; }
 
     if ( defined $opt_g ) { $parameters{genomeFile} = $opt_g; }
+    if ( defined $opt_z ) { $parameters{genomeSizeFile} = $opt_z; }
     if ( defined $opt_a ) { $parameters{annotationFile} = $opt_a; }
     if ( defined $opt_t ) { $parameters{transcriptomeFile} = $opt_t; }
 
@@ -844,6 +845,30 @@ sub sortCluster
         }
     }
 
+    if ( defined $parameters{outputBed} ) {
+        my $posBed = $parameters{outputBed} . "pos";
+        my $negBed = $parameters{outputBed} . "neg";
+        open ( POS, ">$posBed" ); 
+        open ( NEG, ">$negBed" ); 
+        foreach my $cluster ( keys %{$global{dsPairCluster}} ) {
+            if ( $$global{dsPairCluster}{$id}{strand1} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$id}{chr1}, $global{dsPairCluster}{$id}{strand1}, $global{dsPairCluster}{$id}{start1}, $global{dsPairCluster}{$id}{end1} ), "\n"; }
+            else { print NEG join ( "\t", $global{dsPairCluster}{$id}{chr1}, $global{dsPairCluster}{$id}{strand1}, $global{dsPairCluster}{$id}{start1}, $global{dsPairCluster}{$id}{end1} ), "\n"; }
+
+            if ( $$global{dsPairCluster}{$id}{strand2} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$id}{chr2}, $global{dsPairCluster}{$id}{strand2}, $global{dsPairCluster}{$id}{start2}, $global{dsPairCluster}{$id}{end2} ), "\n"; }
+            else { print NEG join ( "\t", $global{dsPairCluster}{$id}{chr2}, $global{dsPairCluster}{$id}{strand2}, $global{dsPairCluster}{$id}{start2}, $global{dsPairCluster}{$id}{end2} ), "\n"; }
+        }
+        close POS;
+        close NEG;
+
+        mergeSam ( "tmp.bam", $parameters{inputSam}, outputBam => 1 );
+        print STDERR `genomeCovBed -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.pos.genomeCov"`; 
+        print STDERR `genomeCovBed -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.neg.genomeCov"`; 
+        print STDERR `intersectBed -a $posBed -b "tmp.pos.genomeCov" -wb > "tmp.pos.intCov"`; 
+        print STDERR `intersectBed -a $negBed -b "tmp.neg.genomeCov" -wb > "tmp.neg.intCov"`; 
+
+        exit;
+    }
+
     1;
 }
 
@@ -958,6 +983,42 @@ sub outputSam
     }
 
     return ( $lineCount, $validCount );
+}
+
+sub mergeSam
+{
+    my $outputFile = shift;
+    my $inputSamFileList = shift;
+    my %parameters = @_;
+
+    my $samOutputFile = ( $parameters{outputBam}) ? $outputFile . ".sam" : $outputFile;
+    open ( OUT, ">$samOutputFile" ) or die ( "Error in openning file $outputFile to output merged SAM files!\n" );
+    print "Output merged SAM files to $samOutputFile...\n\tTime: ", `date`;
+    my $lineCount = 0;
+    my $firstSam = 1;
+    my @samFiles = split ( /:/, $inputSamFileList );
+    foreach my $samFile ( @samFiles ) { 
+        open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
+        print "check for supporting reads from sam file $samFile...\n\tTime: ", `date`;
+        while ( my $line = <SAM> ) {
+            next if ( $line =~ /^#/ );
+            if ( $line =~ /^@/ ) { print OUT $line if ( $firstSam ); }
+            else {
+                $lineCount++;
+                if ( $lineCount % 1000000 == 0 ) { print "line: $lineCount\n\t", `date`; }
+
+                print OUT $line;
+            }
+        }
+        close SAM;
+        print "in total $lineCount lines read from sam files.\n";
+
+        $firstSam = 0;
+    }
+    close OUT;
+    if ( $parameters{outputBam} ) { print STDERR `samtools view -bS $samOutputFile | samtools sort - $outputFile`; }
+
+    return ( $lineCount );
 }
 
 
