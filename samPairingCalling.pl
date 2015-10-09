@@ -851,18 +851,18 @@ sub sortCluster
         open ( POS, ">$posBed" ); 
         open ( NEG, ">$negBed" ); 
         foreach my $cluster ( keys %{$global{dsPairCluster}} ) {
-            if ( $global{dsPairCluster}{$cluster}{strand1} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$cluster}{chr1}, $global{dsPairCluster}{$cluster}{strand1}, $global{dsPairCluster}{$cluster}{start1}, $global{dsPairCluster}{$cluster}{end1} ), "\n"; }
-            else { print NEG join ( "\t", $global{dsPairCluster}{$cluster}{chr1}, $global{dsPairCluster}{$cluster}{strand1}, $global{dsPairCluster}{$cluster}{start1}, $global{dsPairCluster}{$cluster}{end1} ), "\n"; }
+            if ( $global{dsPairCluster}{$cluster}{strand1} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$cluster}{chr1}, $global{dsPairCluster}{$cluster}{start1}, $global{dsPairCluster}{$cluster}{end1}, $global{dsPairCluster}{$cluster}{strand1} ), "\n"; }
+            else { print NEG join ( "\t", $global{dsPairCluster}{$cluster}{chr1}, $global{dsPairCluster}{$cluster}{start1}, $global{dsPairCluster}{$cluster}{end1}, $global{dsPairCluster}{$cluster}{strand1} ), "\n"; }
 
-            if ( $global{dsPairCluster}{$cluster}{strand2} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$cluster}{chr2}, $global{dsPairCluster}{$cluster}{strand2}, $global{dsPairCluster}{$cluster}{start2}, $global{dsPairCluster}{$cluster}{end2} ), "\n"; }
-            else { print NEG join ( "\t", $global{dsPairCluster}{$cluster}{chr2}, $global{dsPairCluster}{$cluster}{strand2}, $global{dsPairCluster}{$cluster}{start2}, $global{dsPairCluster}{$cluster}{end2} ), "\n"; }
+            if ( $global{dsPairCluster}{$cluster}{strand2} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$cluster}{chr2}, $global{dsPairCluster}{$cluster}{start2}, $global{dsPairCluster}{$cluster}{end2}, $global{dsPairCluster}{$cluster}{strand2} ), "\n"; }
+            else { print NEG join ( "\t", $global{dsPairCluster}{$cluster}{chr2}, $global{dsPairCluster}{$cluster}{start2}, $global{dsPairCluster}{$cluster}{end2}, $global{dsPairCluster}{$cluster}{strand2} ), "\n"; }
         }
         close POS;
         close NEG;
 
-        mergeSam ( "tmp.bam", $parameters{inputSam}, outputBam => 1 );
-        print STDERR `genomeCovBed -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.pos.genomeCov"`; 
-        print STDERR `genomeCovBed -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.neg.genomeCov"`; 
+        mergeSam ( "tmp", $parameters{inputSam}, outputBam => 1 );
+        print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.pos.genomeCov"`; 
+        print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.neg.genomeCov"`; 
         print STDERR `intersectBed -a $posBed -b "tmp.pos.genomeCov" -wb > "tmp.pos.intCov"`; 
         print STDERR `intersectBed -a $negBed -b "tmp.neg.genomeCov" -wb > "tmp.neg.intCov"`; 
 
