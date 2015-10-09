@@ -863,8 +863,8 @@ sub sortCluster
         mergeSam ( "tmp", $parameters{inputSam}, outputBam => 1 );
         print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.pos.genomeCov"`; 
         print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.neg.genomeCov"`; 
-        print STDERR `intersectBed -a $posBed -b "tmp.pos.genomeCov" -wb > "tmp.pos.intCov"`; 
-        print STDERR `intersectBed -a $negBed -b "tmp.neg.genomeCov" -wb > "tmp.neg.intCov"`; 
+        print STDERR `intersectBed -b $posBed -a "tmp.pos.genomeCov" -wb > "tmp.pos.intCov"`; 
+        print STDERR `intersectBed -b $negBed -a "tmp.neg.genomeCov" -wb > "tmp.neg.intCov"`; 
 
         exit;
     }
