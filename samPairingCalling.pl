@@ -864,13 +864,31 @@ sub sortCluster
         print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.pos.genomeCov"`; 
         print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.neg.genomeCov"`; 
         print STDERR `bedtools intersect -wb -a "tmp.pos.genomeCov" -b $posBed > "tmp.pos.intCov"`; 
+        addGenomeScore ( "tmp.pos.intCov" );
         print STDERR `bedtools intersect -wb -a "tmp.neg.genomeCov" -b $negBed > "tmp.neg.intCov"`; 
-
-        exit;
+        addGenomeScore ( "tmp.neg.intCov" );
     }
 
     1;
 }
+
+sub addGenomeScore 
+{
+    my $intCovFile = shift;
+    open ( ICF, $intCovFile );
+    while ( my $line = <ICF> ) {
+        chomp $line;
+        my @data = split ( /\t/, $line );
+        if ( not defined $global{dsPairCluster}{$data[8]}{$data[4]}{$data[7]}{$data[5]} ) {
+            $global{dsPairCluster}{$data[8]}{$data[4]}{$data[7]}{$data[5]} = $data[3];
+        }
+        elsif ( $global{dsPairCluster}{$data[8]}{$data[4]}{$data[7]}{$data[5]} < $data[3] ) {
+            $global{dsPairCluster}{$data[8]}{$data[4]}{$data[7]}{$data[5]} = $data[3];
+        }
+    }
+    close ICF;
+}
+
 
 sub printCluster
 {
@@ -897,7 +915,10 @@ sub printCluster
         print OUT $global{dsPairCluster}{$cluster}{start1}, "-", $global{dsPairCluster}{$cluster}{end1};
         print OUT "|", $global{dsPairCluster}{$cluster}{chr2}, "(", $global{dsPairCluster}{$cluster}{strand2}, "):";
         print OUT $global{dsPairCluster}{$cluster}{start2}, "-", $global{dsPairCluster}{$cluster}{end2};
-        print OUT ", support ", scalar(@pairSet), ".\n----\n"; 
+        print OUT ", support ", scalar(@pairSet); 
+        print OUT ", left ", $global{dsPairCluster}{$cluster}{$global{dsPairCluster}{$cluster}{chr1}}{$global{dsPairCluster}{$cluster}{strand1}}{$global{dsPairCluster}{$cluster}{start1}};
+        print OUT ", right ", $global{dsPairCluster}{$cluster}{$global{dsPairCluster}{$cluster}{chr2}}{$global{dsPairCluster}{$cluster}{strand2}}{$global{dsPairCluster}{$cluster}{start2}};
+        print OUT ".\n----\n"; 
         for ( my $idx = 0; $idx < scalar ( @pairSet ); $idx++ ) {
             my $fragNeed2Switch = 0;
             my $pairIdx = $pairSet[$idx];
