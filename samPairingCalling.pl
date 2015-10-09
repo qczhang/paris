@@ -851,11 +851,11 @@ sub sortCluster
         open ( POS, ">$posBed" ); 
         open ( NEG, ">$negBed" ); 
         foreach my $cluster ( keys %{$global{dsPairCluster}} ) {
-            if ( $$global{dsPairCluster}{$id}{strand1} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$id}{chr1}, $global{dsPairCluster}{$id}{strand1}, $global{dsPairCluster}{$id}{start1}, $global{dsPairCluster}{$id}{end1} ), "\n"; }
-            else { print NEG join ( "\t", $global{dsPairCluster}{$id}{chr1}, $global{dsPairCluster}{$id}{strand1}, $global{dsPairCluster}{$id}{start1}, $global{dsPairCluster}{$id}{end1} ), "\n"; }
+            if ( $$global{dsPairCluster}{$cluster}{strand1} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$cluster}{chr1}, $global{dsPairCluster}{$cluster}{strand1}, $global{dsPairCluster}{$cluster}{start1}, $global{dsPairCluster}{$cluster}{end1} ), "\n"; }
+            else { print NEG join ( "\t", $global{dsPairCluster}{$cluster}{chr1}, $global{dsPairCluster}{$cluster}{strand1}, $global{dsPairCluster}{$cluster}{start1}, $global{dsPairCluster}{$cluster}{end1} ), "\n"; }
 
-            if ( $$global{dsPairCluster}{$id}{strand2} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$id}{chr2}, $global{dsPairCluster}{$id}{strand2}, $global{dsPairCluster}{$id}{start2}, $global{dsPairCluster}{$id}{end2} ), "\n"; }
-            else { print NEG join ( "\t", $global{dsPairCluster}{$id}{chr2}, $global{dsPairCluster}{$id}{strand2}, $global{dsPairCluster}{$id}{start2}, $global{dsPairCluster}{$id}{end2} ), "\n"; }
+            if ( $$global{dsPairCluster}{$cluster}{strand2} eq "+" ) { print POS join ( "\t", $global{dsPairCluster}{$cluster}{chr2}, $global{dsPairCluster}{$cluster}{strand2}, $global{dsPairCluster}{$cluster}{start2}, $global{dsPairCluster}{$cluster}{end2} ), "\n"; }
+            else { print NEG join ( "\t", $global{dsPairCluster}{$cluster}{chr2}, $global{dsPairCluster}{$cluster}{strand2}, $global{dsPairCluster}{$cluster}{start2}, $global{dsPairCluster}{$cluster}{end2} ), "\n"; }
         }
         close POS;
         close NEG;
