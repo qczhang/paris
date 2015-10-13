@@ -45,8 +45,8 @@ my %global = (
 ##--------------------------------------------------
 #
 
-use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z );
-&getopts('hVDi:j:s:o:g:a:t:l:p:z:');
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z $opt_c );
+&getopts('hVDi:j:s:o:g:a:t:l:p:z:c:');
 
 my $usage = <<_EOH_;
 ## --------------------------------------
@@ -103,7 +103,7 @@ sub main
 
     sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
     $memoryUsage->record('Memory after cluster sorting'); $memoryUsage->dump();
-    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam );
+    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameter{scoringMethod} );
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
 
     1;
@@ -129,6 +129,8 @@ sub init {
 
     if ( defined $opt_l ) { $environment{minOverhang} = $opt_l; }
     if ( defined $opt_p ) { $parameters{minSupport} = $opt_p; }
+    if ( defined $opt_c ) { $parameters{scoringMethod} = $opt_c; }
+
 
     return ( %parameters );
 }
@@ -915,10 +917,13 @@ sub printCluster
         print OUT $global{dsPairCluster}{$cluster}{start1}, "-", $global{dsPairCluster}{$cluster}{end1};
         print OUT "|", $global{dsPairCluster}{$cluster}{chr2}, "(", $global{dsPairCluster}{$cluster}{strand2}, "):";
         print OUT $global{dsPairCluster}{$cluster}{start2}, "-", $global{dsPairCluster}{$cluster}{end2};
-        print OUT ", support ", scalar(@pairSet); 
-        print OUT ", left ", $global{dsPairCluster}{$cluster}{$global{dsPairCluster}{$cluster}{chr1}}{$global{dsPairCluster}{$cluster}{strand1}}{$global{dsPairCluster}{$cluster}{start1}};
-        print OUT ", right ", $global{dsPairCluster}{$cluster}{$global{dsPairCluster}{$cluster}{chr2}}{$global{dsPairCluster}{$cluster}{strand2}}{$global{dsPairCluster}{$cluster}{start2}};
-        print OUT ".\n----\n"; 
+
+        my $support = scalar(@pairSet);
+        my $left = $global{dsPairCluster}{$cluster}{$global{dsPairCluster}{$cluster}{chr1}}{$global{dsPairCluster}{$cluster}{strand1}}{$global{dsPairCluster}{$cluster}{start1}};
+        my $right = $global{dsPairCluster}{$cluster}{$global{dsPairCluster}{$cluster}{chr2}}{$global{dsPairCluster}{$cluster}{strand2}}{$global{dsPairCluster}{$cluster}{start2}};
+        my $score = supportScore ( $support, $left, $right, $parameters{method} );
+        print OUT ", support $support, left $left, right $right, score $score.\n----\n";
+
         for ( my $idx = 0; $idx < scalar ( @pairSet ); $idx++ ) {
             my $fragNeed2Switch = 0;
             my $pairIdx = $pairSet[$idx];
@@ -956,6 +961,19 @@ sub printCluster
 
     1;
 }
+
+sub supportScore
+{
+  my ( $support, $left, $right, $method ) = @_;
+
+  my $score = -1;
+  if ( $method eq "geometric" ) { $score = $support / sqrt ( $left * $right ); }
+  elsif ( $method eq "harmonic" ) { $score = $support * ( 1/$left + 1/$right ) / 2; }
+  else { $score = 0; }
+
+  return $score;
+}
+
 
 sub outputSam
 {
