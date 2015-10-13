@@ -972,6 +972,7 @@ sub supportScore
   if ( $method eq "geometric" ) { $score = ( $support + 1 ) / sqrt ( ( $left + 1 ) * ( $right + 1 ) ); }
   elsif ( $method eq "harmonic" ) { $score = ( $support + 1 ) * ( 1/ ($left+1) + 1/ ($right+1) ) / 2; }
   else { $score = 0; }
+  $score = 1 if ( $score > 1 );
 
   return $score;
 }
