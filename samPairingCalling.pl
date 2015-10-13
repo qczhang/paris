@@ -969,8 +969,8 @@ sub supportScore
   my ( $support, $left, $right, $method ) = @_;
 
   my $score = -1;
-  if ( $method eq "geometric" ) { $score = $support / sqrt ( $left * $right ); }
-  elsif ( $method eq "harmonic" ) { $score = $support * ( 1/$left + 1/$right ) / 2; }
+  if ( $method eq "geometric" ) { $score = ( $support + 1 ) / sqrt ( ( $left + 1 ) * ( $right + 1 ) ); }
+  elsif ( $method eq "harmonic" ) { $score = ( $support + 1 ) * ( 1/ ($left+1) + 1/ ($right+1) ) / 2; }
   else { $score = 0; }
 
   return $score;
