@@ -60,11 +60,13 @@ $0 -i input_sam_file -j chiastic_junction_file -s chiastic_support_sam_file -o o
  -o	output base pair groups
 # more options:
  -g     genome file
+ -z	genome size file
  -a     annotation file
  -t     transcriptome file
 
  -l	minimum overhang length for valid mapping
  -p	minimum number of supporting reads 
+ -c 	scoring method (harmonic or geometric)
 _EOH_
 ;
 
@@ -103,7 +105,7 @@ sub main
 
     sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
     $memoryUsage->record('Memory after cluster sorting'); $memoryUsage->dump();
-    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameter{scoringMethod} );
+    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
     $memoryUsage->record('final memory usage'); $memoryUsage->dump();
 
     1;
