@@ -84,16 +84,17 @@ sub main
     $global{genomeSeq} = loadGenome ( $parameters{genomeFile} );
 
     my $allSupportSam = "";
+    my $readClusterBed = "tmp.$$.readCluster.bed";
     if ( $samFileList ne "NULL" ) {
         $allSupportSam = $samFileList;
         my @samFiles = split ( /:/, $samFileList );
-        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile ); }
+        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, readCluster => $readClusterBed ); }
     }
     if ( $chiasticFileList ne "NULL" ) {
         if ( $allSupportSam ) { $allSupportSam = $samFileList . ":" . $chiasticSamFileList;  }
         else {  $allSupportSam = $chiasticSamFileList;  }
         my @chiasticFiles = split ( /:/, $chiasticFileList );
-        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile ); }
+        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, readCluster => $readClusterBed ); }
     }
 
     sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
@@ -131,10 +132,12 @@ sub init {
 sub genPairClusterFromSamFile
 {
     my $samFile = shift;
+    my %parameters = ();
 
     my $lineCount = 0;
     my $validCount = 0;
     open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
+    open ( RC, ">$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
     print "read sam file $samFile...\n\tTime: ", `date`;
     while ( my $line = <SAM> ) {
         next if ( $line =~ /^#/ );
@@ -147,14 +150,15 @@ sub genPairClusterFromSamFile
             }
 
             #last if ( $lineCount > 10 );
-	    my $bedline = genPairClusterFromSamLine ( $line );
-	    if ( $bedline ) {
-		print $bedline;
-		$validCount++;
-	    }
+            my $bedline = genPairClusterFromSamLine ( $line );
+            if ( $bedline ) {
+                print RC $bedline;
+                $validCount++;
+            }
         }
     }
     close SAM;
+    close RC;
     print "$lineCount lines read from sam file $samFile.\n";
     print "among which $validCount lines generate supports for base pairing.\n\tTime: ", `date`, "\n";
 
@@ -167,7 +171,7 @@ sub genPairClusterFromSamLine
 
     my @data = split ( /\t/, $line );
     if ( $data[5] !~ /[ND]/ ) {
-        print STDERR "Skip read that does not contain cleavage!\n\t$line\n";
+        print STDERR "Skip read that does not contain cleavage!\n\t$line\n" if ( $opt_V );
         return 0;
     }
 
@@ -189,10 +193,12 @@ sub genPairClusterFromSamLine
 sub genPairClusterFromJunctionFile
 {
     my $junctionFile = shift;
+    my %parameters = ();
 
     my $lineCount = 0;
     my $validCount = 0;
     open ( JUNC, $junctionFile ) or die ( "Error in reading junction file $junctionFile!\n" );
+    open ( RC, ">$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
     print "read junction file $junctionFile...\n\tTime: ", `date`;
     while ( my $line = <JUNC> ) {
         next if ( $line =~ /^#/ );
@@ -204,13 +210,14 @@ sub genPairClusterFromJunctionFile
 
         print "line: $lineCount\n\t", `date` if ( $lineCount % 100000 == 0 );
         chomp $line;
-	my $bedline = genPairClusterFromOneJunction ( $line );
-	if ( $bedline ) {
-	    print $bedline;
-	    $validCount++;
-	}
+        my $bedline = genPairClusterFromOneJunction ( $line );
+        if ( $bedline ) {
+            print $bedline;
+            $validCount++;
+        }
     }
     close JUNC;
+    close RC;
     print "$lineCount lines read from junction file $junctionFile.\n";
     print "among which $validCount lines generate supports for base pairing.\n\tTime: ", `date`, "\n";
 
@@ -238,7 +245,7 @@ sub genPairClusterFromOneJunction
         }
         else { print STDERR "\t$line\n"; return 0; }
     }
-    if ( not $cigar ) {  print STDERR "\tSkip line of inapproprieate alignment: $line\n";  return 0;  }
+    if ( not $cigar ) {  print STDERR "\tSkip line of inapproprieate alignment: $line\n" if ( $opt_V );  return 0;  }
 
     my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = 
 	getJuncPair ( $data[0], $data[2], $data[1], $data[10], $data[11], $data[3], $data[5], $data[4], $data[12], $data[13], minOverhang => $environment{minOverhang} );
@@ -247,8 +254,8 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
-    my $bed = join ( "\t", $data[2], $pair1s, $pair1e, $data[2], $data[0] ) . "\n";
-    $bed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[5], $data[0] ) . "\n";
+    my $bed = join ( "\t", $data[0], $pair1s, $pair1e, $data[2], $data[9] ) . "\n";
+    $bed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[5], $data[9] ) . "\n";
     
     return $bed;
     1;
@@ -355,7 +362,7 @@ sub getSamPair
     my ( $ref_match, $ref_matchSize ) = parseCigar ( $cigar );
     my ( $frag1, $frag2, $frag1Pos, $frag2Pos ) = getBothFragment ( $chr, $strand, $pos, $ref_match, $ref_matchSize );
     if ( ( not $frag1 ) or ( not $frag2 ) ) {
-        print STDERR "Skip read that aligns to an intron!\n";
+        print STDERR "Skip read that aligns to an intron!\n" if ( $opt_V );
         return 0;
     }
     elsif ( ( defined $parameters{minOverhang} ) and ( ( length ( $frag1 ) < $parameters{minOverhang} ) or ( length ( $frag2 ) < $parameters{minOverhang} ) ) ) {
@@ -366,7 +373,7 @@ sub getSamPair
     $frag2 = reverse ( $frag2 );
     my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
     if ( not $maxScore ) {
-        print STDERR "Skip read that cannot be paired!\n";
+        print STDERR "Skip read that cannot be paired!\n" if ( $opt_V );
         return 0; 
     }
 
@@ -403,21 +410,21 @@ sub getJuncPair
 #        elsif ( ( $strand1 eq "-" ) and ( $donor > $acceptor ) ) { $isIntron = checkJuncIntron ( $chr1, $strand1, $acceptor, $donor ); }
     }
     if ( $isIntron ) {
-        print STDERR "Skip read that aligns to an intron!\n";
+        print STDERR "Skip read that aligns to an intron!\n" if ( $opt_V );
         return 0;
     }
 
     my $frag1 = getOneFragment ( $chr1, $strand1, $pos1, $cigar1 );
     my $frag2 = getOneFragment ( $chr2, $strand2, $pos2, $cigar2 );
     if ( ( defined $parameters{minOverhang} ) and ( ( length ( $frag1 ) < $parameters{minOverhang} ) or ( length ( $frag2 ) < $parameters{minOverhang} ) ) ) {
-        print STDERR "Skip read that does not contain enough overhang in either end!\n";
+        print STDERR "Skip read that does not contain enough overhang in either end!\n" if ( $opt_V );
         return 0;
     }
 
     $frag2 = reverse ( $frag2 );
     my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
     if ( not $maxScore ) {
-        print STDERR "Skip junction that cannot be paired!\n";
+        print STDERR "Skip junction that cannot be paired!\n" if ( $opt_V );
         return 0; 
     }
 
