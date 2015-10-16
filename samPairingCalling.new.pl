@@ -152,9 +152,9 @@ sub genPairClusterFromSamFile
             }
 
             #last if ( $lineCount > 10 );
-            my $bedline = genPairClusterFromSamLine ( $line );
-            if ( $bedline ) {
-                print RC $bedline;
+            my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line );
+            if ( $duplexStemLine ) {
+                print RC $duplexIntervalLine;
                 $validCount++;
             }
         }
@@ -184,10 +184,11 @@ sub genPairClusterFromSamLine
         return 0;
     }
 
-    my $bed = join ( "\t", $data[2], $pair1s, $pair1e, $strand, $data[0] ) . "\n";
-    $bed .= join ( "\t", $data[2], $pair2s, $pair2e, $strand, $data[0] ) . "\n";
+    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $strand, $data[0] ) . "\n";
+    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $strand, $data[0] ) . "\n";
+    my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $strand, $data[0] ) . "\n";
     
-    return $bed;
+    return ( $stemBed, $intervalBed );
 
     1;
 }
@@ -211,10 +212,9 @@ sub genPairClusterFromJunctionFile
         }
 
         print "line: $lineCount\n\t", `date` if ( $lineCount % 100000 == 0 );
-        chomp $line;
-        my $bedline = genPairClusterFromOneJunction ( $line );
-        if ( $bedline ) {
-            print RC $bedline;
+        my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line );
+        if ( $duplexStemLine ) {
+            print RC $duplexIntervalLine;
             $validCount++;
         }
     }
@@ -230,6 +230,7 @@ sub genPairClusterFromOneJunction
 {
     my $line = shift;
 
+    chomp $line;
     my @data = split ( /\t/, $line );
     my $cigar = "";  my $isChiastic = 0;
     if ( ( $data[0] ne $data[3] ) or ( $data[2] ne $data[5] ) ) {
@@ -256,10 +257,13 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
-    my $bed = join ( "\t", $data[0], $pair1s, $pair1e, $data[2], $data[9] ) . "\n";
-    $bed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[5], $data[9] ) . "\n";
+    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[2], $data[9] ) . "\n";
+    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[5], $data[9] ) . "\n";
+    my $intervalBed = $stemBed;
+    if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[2], $data[9] ) . "\n"; }
     
-    return $bed;
+    return ( $stemBed, $intervalBed );
+    
     1;
 }
 
@@ -268,6 +272,12 @@ sub nonOverlappingTag
     my $ref_read_tag = shift;
     my $readClusterBedFile = shift;
 
+    my $sortedReadClusterBedFile = $readClusterBedFile . "sorted";
+    my $readClusterFile = $readClusterBedFile . "cluster";
+    print STDERR `sort -k1,1 -k2,3n -i $readClusterBedFile -o $sortedReadClusterBedFile`;
+    print STDERR `bedtools cluster -i $sortedReadClusterBedFile > $readClusterFile`;
+
+    ## generate proper tags for reads in $ref_read_tag 
 }
 
 sub getNewCigar
