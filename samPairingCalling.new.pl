@@ -85,16 +85,17 @@ sub main
 
     my $allSupportSam = "";
     my $readClusterBed = "tmp.$$.readCluster.bed";
+    my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
     if ( $samFileList ne "NULL" ) {
         $allSupportSam = $samFileList;
         my @samFiles = split ( /:/, $samFileList );
-        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, readCluster => $readClusterBed ); }
+        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed ); }
     }
     if ( $chiasticFileList ne "NULL" ) {
         if ( $allSupportSam ) { $allSupportSam = $samFileList . ":" . $chiasticSamFileList;  }
         else {  $allSupportSam = $chiasticSamFileList;  }
         my @chiasticFiles = split ( /:/, $chiasticFileList );
-        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, readCluster => $readClusterBed ); }
+        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed ); }
     }
 
     my %read_tag = ();
@@ -139,6 +140,7 @@ sub genPairClusterFromSamFile
     my $lineCount = 0;
     my $validCount = 0;
     open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
+    open ( DG, ">>$parameters{duplexGroup}" ) or die ( "Error in opening $parameters{duplexGroup} for output read duplex groups!\n" );
     open ( RC, ">>$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
     print "read sam file $samFile...\n\tTime: ", `date`;
     while ( my $line = <SAM> ) {
@@ -154,6 +156,7 @@ sub genPairClusterFromSamFile
             #last if ( $lineCount > 10 );
             my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line );
             if ( $duplexStemLine ) {
+                print DG $duplexStemLine;
                 print RC $duplexIntervalLine;
                 $validCount++;
             }
@@ -201,6 +204,7 @@ sub genPairClusterFromJunctionFile
     my $lineCount = 0;
     my $validCount = 0;
     open ( JUNC, $junctionFile ) or die ( "Error in reading junction file $junctionFile!\n" );
+    open ( DG, ">>$parameters{duplexGroup}" ) or die ( "Error in opening $parameters{duplexGroup} for output read duplex groups!\n" );
     open ( RC, ">>$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
     print "read junction file $junctionFile...\n\tTime: ", `date`;
     while ( my $line = <JUNC> ) {
@@ -214,6 +218,7 @@ sub genPairClusterFromJunctionFile
         print "line: $lineCount\n\t", `date` if ( $lineCount % 100000 == 0 );
         my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line );
         if ( $duplexStemLine ) {
+            print DG $duplexStemLine;
             print RC $duplexIntervalLine;
             $validCount++;
         }
