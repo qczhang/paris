@@ -7,7 +7,7 @@ use warnings;
 use Carp;
 use File::Basename;
 use Data::Dumper;
-use Set::IntervalTree;
+#use Set::IntervalTree;
 
 use base 'Exporter';
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK );
