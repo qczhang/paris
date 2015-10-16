@@ -97,6 +97,8 @@ sub main
         foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, readCluster => $readClusterBed ); }
     }
 
+    my %read_tag = ();
+    nonOverlappingTag ( \%read_tag, $readClusterBed );
     sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
     printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
 
@@ -137,7 +139,7 @@ sub genPairClusterFromSamFile
     my $lineCount = 0;
     my $validCount = 0;
     open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
-    open ( RC, ">$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
+    open ( RC, ">>$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
     print "read sam file $samFile...\n\tTime: ", `date`;
     while ( my $line = <SAM> ) {
         next if ( $line =~ /^#/ );
@@ -198,7 +200,7 @@ sub genPairClusterFromJunctionFile
     my $lineCount = 0;
     my $validCount = 0;
     open ( JUNC, $junctionFile ) or die ( "Error in reading junction file $junctionFile!\n" );
-    open ( RC, ">$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
+    open ( RC, ">>$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
     print "read junction file $junctionFile...\n\tTime: ", `date`;
     while ( my $line = <JUNC> ) {
         next if ( $line =~ /^#/ );
@@ -212,7 +214,7 @@ sub genPairClusterFromJunctionFile
         chomp $line;
         my $bedline = genPairClusterFromOneJunction ( $line );
         if ( $bedline ) {
-            print $bedline;
+            print RC $bedline;
             $validCount++;
         }
     }
@@ -259,6 +261,13 @@ sub genPairClusterFromOneJunction
     
     return $bed;
     1;
+}
+
+sub nonOverlappingTag 
+{
+    my $ref_read_tag = shift;
+    my $readClusterBedFile = shift;
+
 }
 
 sub getNewCigar
