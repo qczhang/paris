@@ -132,7 +132,7 @@ sub init {
 sub genPairClusterFromSamFile
 {
     my $samFile = shift;
-    my %parameters = ();
+    my %parameters = @_;
 
     my $lineCount = 0;
     my $validCount = 0;
@@ -193,7 +193,7 @@ sub genPairClusterFromSamLine
 sub genPairClusterFromJunctionFile
 {
     my $junctionFile = shift;
-    my %parameters = ();
+    my %parameters = @_;
 
     my $lineCount = 0;
     my $validCount = 0;
