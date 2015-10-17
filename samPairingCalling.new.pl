@@ -296,7 +296,7 @@ sub nonOverlappingTag
     my $readClusterBedFile = shift;
 
     my $sortedReadClusterBedFile = $readClusterBedFile . ".sorted";
-    my $uniqReadClusterBedFile = $duplexGroupBedFile . ".uniq";
+    my $uniqReadClusterBedFile = $readClusterBedFile . ".uniq";
     my $readClusterFile = $readClusterBedFile . ".cluster";
 
     print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n -i $readClusterBedFile -o $sortedReadClusterBedFile`;
