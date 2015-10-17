@@ -314,7 +314,7 @@ sub uniqBed
 
     my $bedInfo = "";  my $tag = "";
     open ( IN, $inputBed ) or die "Cannot open $inputBed for reading!\n";
-    open ( OUT, $uniqBed ) or die "Cannot open $uniqBed for writing!\n";
+    open ( OUT, ">$uniqBed" ) or die "Cannot open $uniqBed for writing!\n";
     if ( $parameters{sorted} ) {
         while ( my $line = <IN> ) {
             my @data = split ( /\t/, $line );
