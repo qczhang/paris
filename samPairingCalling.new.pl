@@ -327,7 +327,7 @@ sub uniqBed
             }
             else { $tag .= $data[3]; }
         }
-        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $data[4], $bedStrand ), "\n"; }
+        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, ".", $bedStrand ), "\n"; }
     }
     else {
         print STDERR "not implemented!\n";
