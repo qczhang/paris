@@ -84,8 +84,8 @@ sub main
     $global{genomeSeq} = loadGenome ( $parameters{genomeFile} );
 
     my $allSupportSam = "";
-    my $readClusterBed = "tmp.$$.readCluster.bed";
     my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
+    my $readClusterBed = "tmp.$$.readCluster.bed";
     if ( $samFileList ne "NULL" ) {
         $allSupportSam = $samFileList;
         my @samFiles = split ( /:/, $samFileList );
@@ -99,6 +99,7 @@ sub main
     }
 
     my %read_tag = ();
+    genDuplexGroup ( \%read_tag, $duplexGroupBed );
     nonOverlappingTag ( \%read_tag, $readClusterBed );
     sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
     printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
@@ -272,17 +273,66 @@ sub genPairClusterFromOneJunction
     1;
 }
 
+sub genDuplexGroup 
+{
+    my $ref_read_tag = shift;
+    my $duplexGroupBedFile = shift;
+
+    my $sortedDuplexGroupBedFile = $duplexGroupBedFile . ".sorted";
+    my $uniqDuplexGroupBedFile = $duplexGroupBedFile . ".uniq";
+    my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
+
+    print STDERR `sort -k1,1 -k4,4 -k2,2 -k3,3n -i $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
+    uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
+    exit;
+    print STDERR `bedtools intersect -i $uniqDuplexGroupBedFile > $duplexGroupFile`;
+
+    ## generate proper tags for reads in $ref_read_tag 
+}
+
 sub nonOverlappingTag 
 {
     my $ref_read_tag = shift;
     my $readClusterBedFile = shift;
 
-    my $sortedReadClusterBedFile = $readClusterBedFile . "sorted";
-    my $readClusterFile = $readClusterBedFile . "cluster";
-    print STDERR `sort -k1,1 -k2,3n -i $readClusterBedFile -o $sortedReadClusterBedFile`;
-    print STDERR `bedtools cluster -i $sortedReadClusterBedFile > $readClusterFile`;
+    my $sortedReadClusterBedFile = $readClusterBedFile . ".sorted";
+    my $uniqReadClusterBedFile = $duplexGroupBedFile . ".uniq";
+    my $readClusterFile = $readClusterBedFile . ".cluster";
+
+    print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n -i $readClusterBedFile -o $sortedReadClusterBedFile`;
+    uniqBed ( $sortedReadClusterBedFile, $uniqReadClusterBedFile, sorted => 1 );
+    print STDERR `bedtools cluster -i $uniqReadClusterBedFile > $readClusterFile`;
 
     ## generate proper tags for reads in $ref_read_tag 
+}
+
+sub uniqBed 
+{
+    my $inputBed = shift;
+    my $uniqBed = shift;
+    my %parameters = @_;
+
+    my $bedInfo = "";  my $tag = "";
+    open ( IN, $inputBed ) or die "Cannot open $inputBed for reading!\n";
+    open ( OUT, $uniqBed ) or die "Cannot open $uniqBed for writing!\n";
+    if ( $parameters{sorted} ) {
+        while ( my $line = <IN> ) {
+            my @data = split ( /\t/, $line );
+            my $tmpInfo = $data[0] . $data[3] . $data[1] . $data[2];
+            if ( $tmpInfo ne $bedInfo ) {
+                if ( $bedInfo ) { print OUT join ( "\t", $data[0], $data[1], $data[2], $data[3], $tag ), "\n"; }
+                $bedInfo = $tmpInfo;
+                $tag = $data[4];
+            }
+            else { $tag .= $data[4]; }
+        }
+    }
+    else {
+        print STDERR "not implemented!\n";
+        return 0;
+    }
+    close IN;
+    close OUT;
 }
 
 sub getNewCigar
