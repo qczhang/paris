@@ -188,9 +188,9 @@ sub genPairClusterFromSamLine
         return 0;
     }
 
-    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $strand, $data[0] ) . "\n";
-    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $strand, $data[0] ) . "\n";
-    my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $strand, $data[0] ) . "\n";
+    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], ".", $strand ) . "\n";
+    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], ".", $strand ) . "\n";
+    my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], ".", $strand ) . "\n";
     
     return ( $stemBed, $intervalBed );
 
@@ -263,10 +263,10 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
-    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[2], $data[9] ) . "\n";
-    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[5], $data[9] ) . "\n";
+    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], ".", $data[2] ) . "\n";
+    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], ".", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
-    if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[2], $data[9] ) . "\n"; }
+    if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[9], ".", $data[2] ) . "\n"; }
     
     return ( $stemBed, $intervalBed );
     
@@ -284,7 +284,7 @@ sub genDuplexGroup
 
     print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
-    #print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb > $duplexGroupFile`;
+    print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s > $duplexGroupFile`;
 
     ## generate proper tags for reads in $ref_read_tag 
 }
