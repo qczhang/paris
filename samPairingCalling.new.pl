@@ -284,7 +284,7 @@ sub genDuplexGroup
 
     print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
-    #print STDERR `bedtools intersect -i $uniqDuplexGroupBedFile > $duplexGroupFile`;
+    #print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb > $duplexGroupFile`;
 
     ## generate proper tags for reads in $ref_read_tag 
 }
@@ -318,14 +318,15 @@ sub uniqBed
         while ( my $line = <IN> ) {
             chomp $line;
             my @data = split ( /\t/, $line );
-            my $tmpInfo = $data[0] . $data[3] . $data[1] . $data[2];
+            my $tmpInfo = join ( "\t", $data[0], $data[1], $data[2], $data[3] );
             if ( $tmpInfo ne $bedInfo ) {
-                if ( $bedInfo ) { print OUT join ( "\t", $data[0], $data[1], $data[2], $data[3], $tag ), "\n"; }
+                if ( $bedInfo ) { print OUT join ( "\t", $bedInfo, $tag ), "\n"; }
                 $bedInfo = $tmpInfo;
                 $tag = $data[4];
             }
             else { $tag .= $data[4]; }
         }
+        if ( $bedInfo ) { print OUT join ( "\t", $bedInfo, $tag ), "\n"; }
     }
     else {
         print STDERR "not implemented!\n";
