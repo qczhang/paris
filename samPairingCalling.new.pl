@@ -188,8 +188,8 @@ sub genPairClusterFromSamLine
         return 0;
     }
 
-    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], ".", $strand ) . "\n";
-    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], ".", $strand ) . "\n";
+    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
+    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "2", $strand ) . "\n";
     my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], ".", $strand ) . "\n";
     
     return ( $stemBed, $intervalBed );
@@ -263,8 +263,8 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
-    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], ".", $data[2] ) . "\n";
-    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], ".", $data[5] ) . "\n";
+    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
+    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
     if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[9], ".", $data[2] ) . "\n"; }
     
@@ -286,7 +286,22 @@ sub genDuplexGroup
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s > $duplexGroupFile`;
 
+    processIntersect ( $duplexGroupFile, $duplexConnect );
     ## generate proper tags for reads in $ref_read_tag 
+}
+
+sub processIntersect
+{
+    my $duplexGroupFile = shift;
+    my $duplexConnectFile = shift;
+
+    open ( IN, $duplexGroupFile ) or die "Cannot open $duplexGroupFile for reading!\n";
+    open ( OUT, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
+    while ( my $line = <IN> ) {
+
+    }
+    close IN;
+    close OUT;
 }
 
 sub nonOverlappingTag 
@@ -311,7 +326,7 @@ sub uniqBed
     my $uniqBed = shift;
     my %parameters = @_;
 
-    my $bedPos = "";  my $tag = "";  my $bedStrand = "";
+    my $bedPos = "";  my $tag = "";  my $bedStrand = "";  my $label = "";
     open ( IN, $inputBed ) or die "Cannot open $inputBed for reading!\n";
     open ( OUT, ">$uniqBed" ) or die "Cannot open $uniqBed for writing!\n";
     if ( $parameters{sorted} ) {
@@ -320,14 +335,15 @@ sub uniqBed
             my @data = split ( /\t/, $line );
             my $tmpPos = join ( "\t", $data[0], $data[1], $data[2] );
             if ( ( $tmpPos ne $bedPos ) or ( $data[5] ne $bedStrand ) ) {
-                if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $data[4], $bedStrand ), "\n"; }
+                if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $label, $bedStrand ), "\n"; }
                 $bedPos = $tmpPos;
                 $bedStrand = $data[5];
                 $tag = $data[3];
+                $label = $data[4];
             }
-            else { $tag .= $data[3]; }
+            else { $tag .= ";" . $data[3]; }
         }
-        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, ".", $bedStrand ), "\n"; }
+        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $label, $bedStrand ), "\n"; }
     }
     else {
         print STDERR "not implemented!\n";
