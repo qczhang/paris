@@ -188,6 +188,7 @@ sub genPairClusterFromSamLine
         return 0;
     }
 
+    next if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
     $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "2", $strand ) . "\n";
     my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], ".", $strand ) . "\n";
@@ -281,12 +282,13 @@ sub genDuplexGroup
     my $sortedDuplexGroupBedFile = $duplexGroupBedFile . ".sorted";
     my $uniqDuplexGroupBedFile = $duplexGroupBedFile . ".uniq";
     my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
+    my $duplexConnectFile = $duplexGroupBedFile . ".connect";
 
     print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s > $duplexGroupFile`;
 
-    processIntersect ( $duplexGroupFile, $duplexConnect );
+    processIntersect ( $duplexGroupFile, $duplexConnectFile );
     ## generate proper tags for reads in $ref_read_tag 
 }
 
@@ -295,12 +297,25 @@ sub processIntersect
     my $duplexGroupFile = shift;
     my $duplexConnectFile = shift;
 
+    my %read_connect = ();
     open ( IN, $duplexGroupFile ) or die "Cannot open $duplexGroupFile for reading!\n";
-    open ( OUT, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
     while ( my $line = <IN> ) {
-
+        chomp $line;
+        my @data = split ( /\t/, $line );
+        my @reads1 = split ( /;/, $data[3] );
+        my @reads2 = split ( /;/, $data[9] );
+        foreach my $read1 ( @reads1 ) { foreach my $read2 ( @reads2 ) { $read_connect{$read1}{$read2}++; } }
     }
     close IN;
+
+    open ( OUT, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
+    foreach my $read1 ( keys %read_connect ) {
+        print OUT $read1;
+        foreach my $read2 ( keys %{$read_connect{$read1}} ) {
+            print OUT "\t", $read2 if ( $read_connect{$read1}{$read2} == 2 );
+        }
+        print OUT "\n";
+    }
     close OUT;
 }
 
