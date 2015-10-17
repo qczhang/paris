@@ -499,6 +499,8 @@ sub getSamPair
 
     my ( $ref_match, $ref_matchSize ) = parseCigar ( $cigar );
     my ( $frag1, $frag2, $frag1Pos, $frag2Pos ) = getBothFragment ( $chr, $strand, $pos, $ref_match, $ref_matchSize );
+    print $frag1Pos, "\t", $frag2Pos, "\n"; 
+    exit;
     if ( ( not $frag1 ) or ( not $frag2 ) ) {
         print STDERR "Skip read that aligns to an intron!\n" if ( $opt_V );
         return 0;
