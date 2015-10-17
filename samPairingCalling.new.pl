@@ -311,22 +311,23 @@ sub uniqBed
     my $uniqBed = shift;
     my %parameters = @_;
 
-    my $bedInfo = "";  my $tag = "";
+    my $bedPos = "";  my $tag = "";  my $bedStrand = "";
     open ( IN, $inputBed ) or die "Cannot open $inputBed for reading!\n";
     open ( OUT, ">$uniqBed" ) or die "Cannot open $uniqBed for writing!\n";
     if ( $parameters{sorted} ) {
         while ( my $line = <IN> ) {
             chomp $line;
             my @data = split ( /\t/, $line );
-            my $tmpInfo = join ( "\t", $data[0], $data[1], $data[2], $data[3] );
-            if ( $tmpInfo ne $bedInfo ) {
-                if ( $bedInfo ) { print OUT join ( "\t", $bedInfo, $tag ), "\n"; }
-                $bedInfo = $tmpInfo;
-                $tag = $data[4];
+            my $tmpPos = join ( "\t", $data[0], $data[1], $data[2] );
+            if ( ( $tmpPos ne $bedPos ) or ( $data[5] ne $bedStrand ) ) {
+                if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $data[4], $bedStrand ), "\n"; }
+                $bedPos = $tmpPos;
+                $bedStrand = $data[5];
+                $tag = $data[3];
             }
-            else { $tag .= $data[4]; }
+            else { $tag .= $data[3]; }
         }
-        if ( $bedInfo ) { print OUT join ( "\t", $bedInfo, $tag ), "\n"; }
+        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $data[4], $bedStrand ), "\n"; }
     }
     else {
         print STDERR "not implemented!\n";
