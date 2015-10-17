@@ -282,7 +282,7 @@ sub genDuplexGroup
     my $uniqDuplexGroupBedFile = $duplexGroupBedFile . ".uniq";
     my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
 
-    print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
+    print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s > $duplexGroupFile`;
 
@@ -298,7 +298,7 @@ sub nonOverlappingTag
     my $uniqReadClusterBedFile = $readClusterBedFile . ".uniq";
     my $readClusterFile = $readClusterBedFile . ".cluster";
 
-    print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n $readClusterBedFile -o $sortedReadClusterBedFile`;
+    print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $readClusterBedFile -o $sortedReadClusterBedFile`;
     uniqBed ( $sortedReadClusterBedFile, $uniqReadClusterBedFile, sorted => 1 );
     print STDERR `bedtools cluster -i $uniqReadClusterBedFile > $readClusterFile`;
 
