@@ -289,7 +289,7 @@ sub genDuplexGroup
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s > $duplexGroupFile`;
 
-    processIntersect ( $duplexGroupFile, $duplexConnectFile );
+    # processIntersect ( $duplexGroupFile, $duplexConnectFile );
     ## generate proper tags for reads in $ref_read_tag 
 }
 
@@ -371,7 +371,7 @@ sub uniqBed
     my $uniqBed = shift;
     my %parameters = @_;
 
-    my $bedPos = "";  my $tag = "";  my $bedStrand = "";  my $label = "";
+    my $bedPos = "";  my $tag = "";  my $bedStrand = "";  my $label = "";  my $count = 0;
     open ( IN, $inputBed ) or die "Cannot open $inputBed for reading!\n";
     open ( OUT, ">$uniqBed" ) or die "Cannot open $uniqBed for writing!\n";
     if ( $parameters{sorted} ) {
@@ -380,15 +380,16 @@ sub uniqBed
             my @data = split ( /\t/, $line );
             my $tmpPos = join ( "\t", $data[0], $data[1], $data[2] );
             if ( ( $tmpPos ne $bedPos ) or ( $data[5] ne $bedStrand ) ) {
-                if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $label, $bedStrand ), "\n"; }
+                if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $count, $bedStrand ), "\n"; }
                 $bedPos = $tmpPos;
                 $bedStrand = $data[5];
                 $tag = $data[3];
                 $label = $data[4];
+                $count = 1;
             }
-            else { $tag .= ";" . $data[3]; }
+            else { $tag .= ";" . $data[3]; $count++;  }
         }
-        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $label, $bedStrand ), "\n"; }
+        if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $count, $bedStrand ), "\n"; }
     }
     else {
         print STDERR "not implemented!\n";
