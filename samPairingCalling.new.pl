@@ -282,10 +282,9 @@ sub genDuplexGroup
     my $uniqDuplexGroupBedFile = $duplexGroupBedFile . ".uniq";
     my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
 
-    print STDERR `sort -k1,1 -k4,4 -k2,2 -k3,3n -i $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
+    print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
-    exit;
-    print STDERR `bedtools intersect -i $uniqDuplexGroupBedFile > $duplexGroupFile`;
+    #print STDERR `bedtools intersect -i $uniqDuplexGroupBedFile > $duplexGroupFile`;
 
     ## generate proper tags for reads in $ref_read_tag 
 }
@@ -299,7 +298,7 @@ sub nonOverlappingTag
     my $uniqReadClusterBedFile = $readClusterBedFile . ".uniq";
     my $readClusterFile = $readClusterBedFile . ".cluster";
 
-    print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n -i $readClusterBedFile -o $sortedReadClusterBedFile`;
+    print STDERR `sort -k1,1 -k4,4 -k2,2n -k3,3n $readClusterBedFile -o $sortedReadClusterBedFile`;
     uniqBed ( $sortedReadClusterBedFile, $uniqReadClusterBedFile, sorted => 1 );
     print STDERR `bedtools cluster -i $uniqReadClusterBedFile > $readClusterFile`;
 
@@ -317,6 +316,7 @@ sub uniqBed
     open ( OUT, ">$uniqBed" ) or die "Cannot open $uniqBed for writing!\n";
     if ( $parameters{sorted} ) {
         while ( my $line = <IN> ) {
+            chomp $line;
             my @data = split ( /\t/, $line );
             my $tmpInfo = $data[0] . $data[3] . $data[1] . $data[2];
             if ( $tmpInfo ne $bedInfo ) {
