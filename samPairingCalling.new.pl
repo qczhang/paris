@@ -264,6 +264,7 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
+    next if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
     $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
@@ -297,18 +298,30 @@ sub processIntersect
     my $duplexGroupFile = shift;
     my $duplexConnectFile = shift;
 
+    print "Process intersect file $duplexGroupFile to generate connect file $duplexConnectFile\n";
     my %read_connect = ();
     open ( IN, $duplexGroupFile ) or die "Cannot open $duplexGroupFile for reading!\n";
+    print "  Open intersect file $duplexGroupFile for reading\n";
+    my $lineCount = 0;
     while ( my $line = <IN> ) {
         chomp $line;
+        $lineCount++;
+        if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\n"; print `date`; }
+
         my @data = split ( /\t/, $line );
         my @reads1 = split ( /;/, $data[3] );
         my @reads2 = split ( /;/, $data[9] );
-        foreach my $read1 ( @reads1 ) { foreach my $read2 ( @reads2 ) { $read_connect{$read1}{$read2}++; } }
+        foreach my $read1 ( @reads1 ) { 
+            foreach my $read2 ( @reads2 ) { 
+                next if ( $read1 eq $read2 );
+                $read_connect{$read1}{$read2}++; 
+            } 
+        }
     }
     close IN;
 
     open ( OUT, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
+    print "  Open connect file $duplexConnectFile for writing\n";
     foreach my $read1 ( keys %read_connect ) {
         print OUT $read1;
         foreach my $read2 ( keys %{$read_connect{$read1}} ) {
