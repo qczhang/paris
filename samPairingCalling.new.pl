@@ -188,7 +188,7 @@ sub genPairClusterFromSamLine
         return 0;
     }
 
-    next if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
+    return 0 if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
     $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "2", $strand ) . "\n";
     my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], ".", $strand ) . "\n";
@@ -264,7 +264,7 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
-    next if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
+    return 0 if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
     $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
@@ -302,11 +302,13 @@ sub processIntersect
     my %read_connect = ();
     open ( IN, $duplexGroupFile ) or die "Cannot open $duplexGroupFile for reading!\n";
     print "  Open intersect file $duplexGroupFile for reading\n";
+    my $tmpConnect = "tmp.connect";
+    open ( TC, ">$tmpConnect" );
     my $lineCount = 0;
     while ( my $line = <IN> ) {
         chomp $line;
         $lineCount++;
-        if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\n"; print `date`; }
+        if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\t"; print `date`; }
 
         my @data = split ( /\t/, $line );
         my @reads1 = split ( /;/, $data[3] );
@@ -314,22 +316,37 @@ sub processIntersect
         foreach my $read1 ( @reads1 ) { 
             foreach my $read2 ( @reads2 ) { 
                 next if ( $read1 eq $read2 );
-                $read_connect{$read1}{$read2}++; 
+                print TC $read1, "\t", $read2, "\n";
             } 
         }
     }
     close IN;
+    close TC;
 
-    open ( OUT, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
+    my $tmpConnectSorted = "tmp.connect.sorted";
+    print STDERR `sort -i $tmpConnect -o $tmpConnectSorted`;
+
+    open ( IN, $tmpConnectSorted ) or die "Cannot open $tmpConnectSorted for reading!\n";
+    open ( TCC, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
     print "  Open connect file $duplexConnectFile for writing\n";
-    foreach my $read1 ( keys %read_connect ) {
-        print OUT $read1;
-        foreach my $read2 ( keys %{$read_connect{$read1}} ) {
-            print OUT "\t", $read2 if ( $read_connect{$read1}{$read2} == 2 );
+    my $connectCount = 0;
+    my $lastLine = "";
+    while ( my $line = <IN> ) {
+        if ( $line eq $lastLine ) {
+            $connectCount++;
+            $lastLine = $line;
         }
-        print OUT "\n";
+        else {
+            if ( $lastLine ) {
+                chomp $lastLine;
+                print TCC $lastLine, "\t", $connectCount, "\n";
+                $lastLine = $line;
+                $connectCount = 1;
+            }
+        }
     }
-    close OUT;
+    print TCC $lastLine, "\t", $connectCount, "\n";
+    close TCC;
 }
 
 sub nonOverlappingTag 
