@@ -255,6 +255,15 @@ sub genPairClusterFromJunctionFile
     my $junctionFile = shift;
     my %parameters = @_;
 
+    if ( $parameters{removeRedundancy} ) {
+        print STDERR "Remove redundancy in input Junction file $junctionFile.\t", `date`;
+        my $sortedJunctionFile = "tmp.$$.sorted.junction";
+        my $uniqJunctionFile = "tmp.$$.uniq.junction";
+        print STDERR `sort -k1,1 -k4,4 -k3,3 -k6,6 -k11,11n -k13,13n -k12,12 -k14,14 $junctionFile > $sortedJunctionFile`;
+        uniqJunction ( $sortedJunctionFile, $uniqJunctionFile );
+        $junctionFile = $uniqJunctionFile;
+    }
+
     my $lineCount = 0;
     my $validCount = 0;
     open ( JUNC, $junctionFile ) or die ( "Error in reading junction file $junctionFile!\n" );
@@ -284,6 +293,49 @@ sub genPairClusterFromJunctionFile
 
     return $lineCount;
 }
+
+sub uniqJunction 
+{
+    my $sortedJunctionFile = shift;
+    my $uniqJunctionFile = shift;
+
+    open ( JUNC, $sortedJunctionFile ) or die ( "Error in reading junction file $sortedJunctionFile!\n" );
+    open ( OUT, ">$uniqJunctionFile" ) or die ( "Error in opening $uniqJunctionFile for output uniq junction file!\n" );
+    print "read junction file $sortedJunctionFile...\n\tTime: ", `date`;
+    my $seqName1 = "";  my $strand1 = "";  my $pos1 = 0;  my $cigar1 = "";
+    my $seqName2 = "";  my $strand2 = "";  my $pos2 = 0;  my $cigar2 = "";
+    my $lineCount = 0; my $uniqCount = 0;
+    while ( my $line = <JUNC> ) {
+        next if ( $line =~ /^#/ );
+        if ( $line =~ /^@/ ) { print OUT $line; }
+        else {
+            $lineCount++;
+            if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
+
+            #last if ( $lineCount > 10 );
+            my @data = split ( /\t/, $line );
+            if ( ( $data[10] != $pos1 ) or ( $data[12] != $pos2 ) 
+                    or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
+                    or ( $data[0] ne $seqName1 ) or ( $data[3] ne $seqName2 ) 
+                    or ( $data[2] ne $strand1 ) or ( $data[5] ne $strand2 ) ) {
+                print OUT $line;
+                $uniqCount++;
+            }
+            $seqName1 = $data[0]; $seqName2 = $data[3];
+            $strand1 = $data[2]; $strand2 = $data[5];
+            $pos1 = $data[10]; $pos2 = $data[12];
+            $cigar2 = $data[13]; $cigar1 = $data[11];
+        }
+    }
+    close JUNC;
+    close OUT;
+
+    print "$lineCount lines read from junction file $sortedJunctionFile.\n";
+    print "among which $uniqCount lines are unique.\n\tTime: ", `date`, "\n";
+
+    1;
+}
+
 
 sub genPairClusterFromOneJunction
 {
@@ -345,9 +397,9 @@ sub genDuplexGroup
 
     print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
-    print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s > $duplexGroupFile`;
+    print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -wao > $duplexGroupFile`;
 
-    # processIntersect ( $duplexGroupFile, $duplexConnectFile );
+    processIntersect ( $duplexGroupFile, $duplexConnectFile, minOverlap => 10 );
     ## generate proper tags for reads in $ref_read_tag 
 }
 
@@ -355,12 +407,13 @@ sub processIntersect
 {
     my $duplexGroupFile = shift;
     my $duplexConnectFile = shift;
+    my %parameters = @_;
 
     print "Process intersect file $duplexGroupFile to generate connect file $duplexConnectFile\n";
     my %read_connect = ();
     open ( IN, $duplexGroupFile ) or die "Cannot open $duplexGroupFile for reading!\n";
     print "  Open intersect file $duplexGroupFile for reading\n";
-    my $tmpConnect = "tmp.connect";
+    my $tmpConnect = "tmp.$$.connect";
     open ( TC, ">$tmpConnect" );
     my $lineCount = 0;
     while ( my $line = <IN> ) {
@@ -369,6 +422,8 @@ sub processIntersect
         if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\t"; print `date`; }
 
         my @data = split ( /\t/, $line );
+        next if ( $data[12] < $parameters{minOverlap} );
+
         my @reads1 = split ( /;/, $data[3] );
         my @reads2 = split ( /;/, $data[9] );
         foreach my $read1 ( @reads1 ) { 
@@ -381,7 +436,7 @@ sub processIntersect
     close IN;
     close TC;
 
-    my $tmpConnectSorted = "tmp.connect.sorted";
+    my $tmpConnectSorted = "tmp.$$.connect.sorted";
     print STDERR `sort -i $tmpConnect -o $tmpConnectSorted`;
 
     open ( IN, $tmpConnectSorted ) or die "Cannot open $tmpConnectSorted for reading!\n";
