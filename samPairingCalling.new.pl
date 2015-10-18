@@ -189,7 +189,7 @@ sub uniqSam
     my $readMap = "tmp.$$.readmap.txt";
     my %reads = ();
     open ( SAM, $sortedSamFile ) or die ( "Error in reading sam file $sortedSamFile!\n" );
-    open ( MAP, ">$readMap" ) or die ( "Error in opening $readMap for output read id mapping!\n" );
+    open ( MAP, ">>$readMap" ) or die ( "Error in opening $readMap for output read id mapping!\n" );
     open ( OUT, ">$uniqSamFile" ) or die ( "Error in opening $uniqSamFile for output uniq SAM!\n" );
     print "read sam file $sortedSamFile...\n\tTime: ", `date`;
     my $seqName = "";  my $pos = 0; my $seq = "";
@@ -210,7 +210,7 @@ sub uniqSam
                 $seq = $data[9];
 
                 $uniqCount++;
-                $data[2] = $uniqCount;
+                $data[0] = $uniqCount;
                 print OUT join ( "\t", @data );
             }
 
@@ -218,12 +218,11 @@ sub uniqSam
         }
     }
     close SAM;
+    close MAP;
     close OUT;
 
     print "$lineCount lines read from sam file $sortedSamFile.\n";
     print "among which $uniqCount lines are unique.\n\tTime: ", `date`, "\n";
-
-    exit;
 
     1;
 }
@@ -309,7 +308,10 @@ sub uniqJunction
     my $sortedJunctionFile = shift;
     my $uniqJunctionFile = shift;
 
+    my $readMap = "tmp.$$.readmap.txt";
+    my %reads = ();
     open ( JUNC, $sortedJunctionFile ) or die ( "Error in reading junction file $sortedJunctionFile!\n" );
+    open ( MAP, ">>$readMap" ) or die ( "Error in opening $readMap for output read id mapping!\n" );
     open ( OUT, ">$uniqJunctionFile" ) or die ( "Error in opening $uniqJunctionFile for output uniq junction file!\n" );
     print "read junction file $sortedJunctionFile...\n\tTime: ", `date`;
     my $seqName1 = "";  my $strand1 = "";  my $pos1 = 0;  my $cigar1 = "";
@@ -328,16 +330,21 @@ sub uniqJunction
                     or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
                     or ( $data[0] ne $seqName1 ) or ( $data[3] ne $seqName2 ) 
                     or ( $data[2] ne $strand1 ) or ( $data[5] ne $strand2 ) ) {
-                print OUT $line;
+                $seqName1 = $data[0]; $seqName2 = $data[3];
+                $strand1 = $data[2]; $strand2 = $data[5];
+                $pos1 = $data[10]; $pos2 = $data[12];
+                $cigar2 = $data[13]; $cigar1 = $data[11];
+
                 $uniqCount++;
+                $data[9] = $uniqCount;
+                print OUT join ( "\t", @data );
             }
-            $seqName1 = $data[0]; $seqName2 = $data[3];
-            $strand1 = $data[2]; $strand2 = $data[5];
-            $pos1 = $data[10]; $pos2 = $data[12];
-            $cigar2 = $data[13]; $cigar1 = $data[11];
+
+            print MAP $data[9], "\t", $uniqCount, "\n";
         }
     }
     close JUNC;
+    close MAP;
     close OUT;
 
     print "$lineCount lines read from junction file $sortedJunctionFile.\n";
@@ -453,6 +460,8 @@ sub processIntersect
                 $content{$fileTag} .= $read1 . "\t" . $read2 . "\n";
             } 
         }
+
+        last if ( $lineCount > 100000 );
     }
     close IN;
 
