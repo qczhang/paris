@@ -188,7 +188,7 @@ sub genPairClusterFromSamLine
         return 0;
     }
     if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) 
-            or ( ( $pair1s < $pair2e ) and ( $pair1e > $pair2s ) ) {
+            or ( ( $pair1s < $pair2e ) and ( $pair1e > $pair2s ) ) )  {
         print STDERR "inapproprieate duplex: \t$line\n" if ( $opt_V );
         return 0;
     }
@@ -268,7 +268,7 @@ sub genPairClusterFromOneJunction
         return 0;
     }
     if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) 
-            or ( ( $pair1s < $pair2e ) and ( $pair1e > $pair2s ) ) {
+            or ( ( $pair1s < $pair2e ) and ( $pair1e > $pair2s ) ) ) {
         print STDERR "inapproprieate duplex: \t$line\n" if ( $opt_V );
         return 0;
     }
