@@ -420,7 +420,7 @@ sub processIntersect
     while ( my $line = <IN> ) {
         chomp $line;
         $lineCount++;
-        if ( $lineCount % 10000 == 0 ) { 
+        if ( $lineCount % 100000 == 0 ) { 
             print "line: $lineCount\t", `date`; 
 
             for ( my $idx = 0; $idx < 10; $idx++ ) {
