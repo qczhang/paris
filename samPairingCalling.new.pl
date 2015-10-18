@@ -414,7 +414,6 @@ sub processIntersect
     open ( IN, $duplexGroupFile ) or die "Cannot open $duplexGroupFile for reading!\n";
     print "  Open intersect file $duplexGroupFile for reading\n";
     my $tmpConnect = "tmp.$$.connect";
-    open ( TC, ">$tmpConnect" );
     my $lineCount = 0;
     while ( my $line = <IN> ) {
         chomp $line;
@@ -427,39 +426,41 @@ sub processIntersect
         foreach my $read1 ( @reads1 ) { 
             foreach my $read2 ( @reads2 ) { 
                 next if ( $read1 eq $read2 );
-                print TC $read1, "\t", $read2, "\n";
+                my $fileTag = substr ( $read1, -1 );
+                print STDERR `echo $read1\t$read2 >> $tmpConnect.$fileTag`;
             } 
         }
     }
     close IN;
-    close TC;
 
-    return;
+    for ( my $idx = 0; $idx < 10; $idx++ ) {
+        next if ( not -e "$tmpConnect.$idx" );
+        my $tmpConnectSorted = "tmp.$$.connect.sorted.$idx";
+        print STDERR `sort -i $tmpConnect.$idx -o $tmpConnectSorted`;
 
-    my $tmpConnectSorted = "tmp.$$.connect.sorted";
-    print STDERR `sort -i $tmpConnect -o $tmpConnectSorted`;
-
-    open ( IN, $tmpConnectSorted ) or die "Cannot open $tmpConnectSorted for reading!\n";
-    open ( TCC, ">$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
-    print "  Open connect file $duplexConnectFile for writing\n";
-    my $connectCount = 0;
-    my $lastLine = "";
-    while ( my $line = <IN> ) {
-        if ( $line eq $lastLine ) {
-            $connectCount++;
-            $lastLine = $line;
-        }
-        else {
-            if ( $lastLine ) {
-                chomp $lastLine;
-                print TCC $lastLine, "\t", $connectCount, "\n";
+        open ( IN, $tmpConnectSorted ) or die "Cannot open $tmpConnectSorted for reading!\n";
+        open ( TCC, ">>$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
+        print "  Open connect file $duplexConnectFile for writing\n";
+        my $connectCount = 0;
+        my $lastLine = "";
+        while ( my $line = <IN> ) {
+            if ( $line eq $lastLine ) {
+                $connectCount++;
                 $lastLine = $line;
-                $connectCount = 1;
+            }
+            else {
+                if ( $lastLine ) {
+                    chomp $lastLine;
+                    print TCC $lastLine, "\t", $connectCount, "\n";
+                    $lastLine = $line;
+                    $connectCount = 1;
+                }
             }
         }
+        print TCC $lastLine, "\t", $connectCount, "\n";
+        close IN;
+        close TCC;
     }
-    print TCC $lastLine, "\t", $connectCount, "\n";
-    close TCC;
 }
 
 sub nonOverlappingTag 
@@ -903,7 +904,7 @@ sub sortCluster
         close POS;
         close NEG;
 
-        mergeSam ( "tmp", $parameters{inputSam}, outputBam => 1 );
+        mergeSam ( "tmp.$$", $parameters{inputSam}, outputBam => 1 );
         print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.$$.pos.genomeCov"`; 
         print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.$$.neg.genomeCov"`; 
         print STDERR `bedtools intersect -wb -a "tmp.$$.pos.genomeCov" -b $posBed > "tmp.$$.pos.intCov"`; 
