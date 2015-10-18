@@ -211,11 +211,13 @@ sub uniqSam
                 $seq = $data[9];
 
                 $global{readUniqCount}++;
+                print MAP $data[0], "\t", $global{readUniqCount}, "\n";
                 $data[0] = $global{readUniqCount};
                 print OUT join ( "\t", @data );
             }
-
-            print MAP $data[0], "\t", $global{readUniqCount}, "\n";
+            else {
+                print MAP $data[0], "\t", $global{readUniqCount}, "\n";
+            }
         }
     }
     close SAM;
@@ -337,11 +339,13 @@ sub uniqJunction
                 $cigar2 = $data[13]; $cigar1 = $data[11];
 
                 $global{readUniqCount}++;
+                print MAP $data[9], "\t", $global{readUniqCount}, "\n";
                 $data[9] = $global{readUniqCount};
                 print OUT join ( "\t", @data );
             }
-
-            print MAP $data[9], "\t", $global{readUniqCount}, "\n";
+            else {
+                print MAP $data[9], "\t", $global{readUniqCount}, "\n";
+            }
         }
     }
     close JUNC;
@@ -461,8 +465,6 @@ sub processIntersect
                 $content{$fileTag} .= $read1 . "\t" . $read2 . "\n";
             } 
         }
-
-        last if ( $lineCount > 100000 );
     }
     close IN;
 
@@ -470,7 +472,7 @@ sub processIntersect
         my $tag = sprintf ( "%02s", $idx );
         next if ( not -e "$tmpConnect.$tag" );
         my $tmpConnectSorted = "tmp.$$.connect.sorted.$tag";
-        print STDERR `sort -i $tmpConnect.$tag -o $tmpConnectSorted`;
+        print STDERR `sort -k1,1n -k2,2n -i $tmpConnect.$tag -o $tmpConnectSorted`;
 
         open ( IN, $tmpConnectSorted ) or die "Cannot open $tmpConnectSorted for reading!\n";
         open ( TCC, ">>$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
@@ -484,14 +486,14 @@ sub processIntersect
             else {
                 if ( $lastLine ) {
                     chomp $lastLine;
-                    print TCC $lastLine, "\t", $connectCount, "\n";
+                    print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount > 1 );
                 }
                 $lastLine = $line;
                 $connectCount = 1;
             }
         }
         chomp $lastLine;
-        print TCC $lastLine, "\t", $connectCount, "\n";
+        print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount > 1 );
         close IN;
         close TCC;
     }
