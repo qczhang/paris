@@ -1,0 +1,155 @@
+#! /usr/bin/perl
+#
+# generate uniq alignment sam file
+#   1, uniq hit are defined as the hit fragment starting position and the length
+#
+use strict;
+use warnings;
+use File::Basename;
+use Getopt::Std;
+use Data::Dumper;
+
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_o $opt_s);
+&getopts('hVDi:o:s');
+
+my $usage = <<_EOH_;
+## --------------------------------------
+remove redundancies in SAM files
+
+Command:
+$0 -i input_sam_file -o output_uniq_sam_file
+
+# more options 
+
+_EOH_
+    ;
+
+&main();
+
+sub main {
+    my %parameters = &init();
+
+    my $tmpSam = $parameters{input};
+    my $uniqSam = $parameters{output};
+    if ( $parameters{needSort} ) {
+        print STDERR "process Sam header.\n";
+        print STDERR `grep "^@" $parameters{input} > $uniqSam`;
+        print STDERR "input sam should be sorted. now sorting...\n";
+        $tmpSam = $tmpSam . ".tmp";
+        print STDERR `grep -v "^@" $parameters{input} | sort -k1,1 -o $tmpSam`;
+    }
+
+    print STDERR "check for redundant fragments...\n";
+    my %uniq_reads = ();
+    my %position_mapq = ();
+    my %position_reads = ();
+    my $lineCount = 0;
+    my $unpairedRead = "";  my $unpairedSignature = "";  my $unpairedLine = "";  my $unpairedMAPQ = 0;
+    open ( IN, $tmpSam );
+    open ( OUT, ">>$uniqSam" );
+    while ( my $line = <IN> ) {
+        if ( not $parameters{needSort} ) {
+            if ( $line =~ /^@/ ) {
+                print OUT $line;
+                next;
+            }
+        }
+
+        chomp $line;
+        $lineCount++;
+        print STDERR "line ", $lineCount, "\n" if ( $lineCount % 1000000 == 0 );
+
+        my ( $readID, $flag, $hitID, $hitPos, $mapQuality, $cigar, $mateID, $matePos, $alignLen, $readSeq, $readQual ) = split ( /\t/, $line );
+        if ( $flag & 4 ) {
+            print STDERR "read unmapped...skipped:\n\t$line\n";
+            next;
+        }
+        if ( $flag & 8 ) {
+            print STDERR "mate unmapped...skipped:\n\t$line\n";
+            next;
+        }
+
+        my $start = 0;  my $end = 0;
+        my $alignSignature = "";
+        if ( $flag & 1 ) {
+            if ( not $flag & 2 ) {
+                print STDERR "PE reads not mapped in appropriate pair...skipped:\n\t$line\n" if ( $parameters{verbose} );
+                next;
+            }
+
+            if ( $flag & 32 ) {
+                $start = $hitPos;
+                $end = $hitPos + $alignLen;
+                $alignSignature = join "\t", $hitID, $start, $end; 
+            }
+            elsif ( $flag & 16 ) {
+                $start = $matePos;
+                $end = $matePos - $alignLen;
+                $alignSignature = join "\t", $hitID, $start, $end; 
+            }
+
+            if ( $unpairedRead ) {
+                if ( ( $unpairedRead ne $readID ) || ( $unpairedSignature ne $alignSignature ) ) {
+                    print STDERR "Warning, skip unpaired PE reads:\n\t$unpairedLine\n" if ( $parameters{versbose} ); 
+
+                    $unpairedRead = $readID;
+                    $unpairedSignature = $alignSignature;
+                    $unpairedMAPQ = $mapQuality;
+                    $unpairedLine = $line;
+                }
+                else {
+                    my $mapq = ( $unpairedMAPQ + $mapQuality ) / 2;
+                    if ( defined $position_mapq{$alignSignature} ) {
+                        print $alignSignature, "\n";
+                        print $position_mapq{$alignSignature}, "\t", $readID, "\n";
+                        exit;
+                    }
+                    if ( ( not defined $position_mapq{$alignSignature} ) || ( $position_mapq{$alignSignature} < $mapq ) ) {
+                        $position_reads{$alignSignature} = $readID;
+                        $position_mapq{$alignSignature} = $mapq;
+                        $uniq_reads{$hitID}{$start}{$end} = $unpairedLine . "\n" . $line . "\n";
+                    }
+
+                    $unpairedRead = "";
+                    $unpairedSignature = "";
+                    $unpairedMAPQ = 0;
+                    $unpairedLine = "";
+                }
+            }
+            else {
+                $unpairedRead = $readID;
+                $unpairedSignature = $alignSignature;
+                $unpairedMAPQ = $mapQuality;
+                $unpairedLine = $line;
+            }
+        }
+    }
+    close IN;
+
+    foreach my $hitID ( sort { $a cmp $b } ( keys %uniq_reads ) ) {
+        foreach my $start ( sort { $a <=> $b } ( keys %{$uniq_reads{$hitID}} ) ) {
+            foreach my $end ( sort { $a <=> $b } ( keys %{$uniq_reads{$hitID}{$start}} ) ) {
+                print OUT $uniq_reads{$hitID}{$start}{$end};
+            }
+        }
+    }
+    close OUT;
+
+    print STDERR `/bin/rm $tmpSam` if ( $parameters{needSort} ); 
+}
+
+
+sub init {
+    my %parameters = ();
+
+    die $usage if $opt_h;
+    $opt_V = 0 if ( not defined $opt_V );
+    $opt_D = 0 if ( not defined $opt_D );
+    $opt_s = 0 if ( not defined $opt_s );
+
+    $parameters{input} = $opt_i;
+    $parameters{output} = $opt_o;
+    $parameters{needSort} = $opt_s;
+
+    return ( %parameters );
+}
