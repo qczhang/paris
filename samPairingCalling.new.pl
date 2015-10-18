@@ -26,6 +26,7 @@ my %environment = (
 );
 
 my %global = (
+    readUniqCount           => 0,
     genomeSeq               => {},
     annotation              => {},
 
@@ -209,12 +210,12 @@ sub uniqSam
                 $pos = $data[3];
                 $seq = $data[9];
 
-                $uniqCount++;
-                $data[0] = $uniqCount;
+                $global{readUniqCount}++;
+                $data[0] = $global{readUniqCount};
                 print OUT join ( "\t", @data );
             }
 
-            print MAP $data[0], "\t", $uniqCount, "\n";
+            print MAP $data[0], "\t", $global{readUniqCount}, "\n";
         }
     }
     close SAM;
@@ -222,7 +223,7 @@ sub uniqSam
     close OUT;
 
     print "$lineCount lines read from sam file $sortedSamFile.\n";
-    print "among which $uniqCount lines are unique.\n\tTime: ", `date`, "\n";
+    print "among which $global{readUniqCount} lines are unique.\n\tTime: ", `date`, "\n";
 
     1;
 }
@@ -335,12 +336,12 @@ sub uniqJunction
                 $pos1 = $data[10]; $pos2 = $data[12];
                 $cigar2 = $data[13]; $cigar1 = $data[11];
 
-                $uniqCount++;
-                $data[9] = $uniqCount;
+                $global{readUniqCount}++;
+                $data[9] = $global{readUniqCount};
                 print OUT join ( "\t", @data );
             }
 
-            print MAP $data[9], "\t", $uniqCount, "\n";
+            print MAP $data[9], "\t", $global{readUniqCount}, "\n";
         }
     }
     close JUNC;
@@ -348,7 +349,7 @@ sub uniqJunction
     close OUT;
 
     print "$lineCount lines read from junction file $sortedJunctionFile.\n";
-    print "among which $uniqCount lines are unique.\n\tTime: ", `date`, "\n";
+    print "among which $global{readUniqCount} lines are unique.\n\tTime: ", `date`, "\n";
 
     1;
 }
