@@ -182,11 +182,12 @@ sub genPairClusterFromSamLine
     }
 
     my $strand = ( $data[1] & 16 ) ? "-" : "+";
-    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
-    if ( not $alignment ) {
-        print STDERR "\t$line\n" if ( $opt_V );
-        return 0;
-    }
+    #my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
+    my ( $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
+    #if ( not $alignment ) {
+    #    print STDERR "\t$line\n" if ( $opt_V );
+    #    return 0;
+    #}
 
     return 0 if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
@@ -499,8 +500,7 @@ sub getSamPair
 
     my ( $ref_match, $ref_matchSize ) = parseCigar ( $cigar );
     my ( $frag1, $frag2, $frag1Pos, $frag2Pos ) = getBothFragment ( $chr, $strand, $pos, $ref_match, $ref_matchSize );
-    print $frag1Pos, "\t", $frag2Pos, "\n"; 
-    exit;
+    
     if ( ( not $frag1 ) or ( not $frag2 ) ) {
         print STDERR "Skip read that aligns to an intron!\n" if ( $opt_V );
         return 0;
@@ -510,31 +510,37 @@ sub getSamPair
         return 0;
     }
 
-    $frag2 = reverse ( $frag2 );
-    my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
-    if ( not $maxScore ) {
-        print STDERR "Skip read that cannot be paired!\n" if ( $opt_V );
-        return 0; 
-    }
+    if ( defined $parameters{useLongestPairing} ) {
+        ## the following is to use longest pairing region to replace the total fragment. 
+        $frag2 = reverse ( $frag2 );
+        my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
+        if ( not $maxScore ) {
+            print STDERR "Skip read that cannot be paired!\n" if ( $opt_V );
+            return 0; 
+        }
 
-    print STDERR "relative intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
-    if ( $strand eq "+" ) {
-        $intv1s += $frag1Pos-1;
-        $intv1e += $frag1Pos;
-        my $tmpPos = length ( $frag2 )-$intv2s+$frag2Pos;
-        $intv2s = length ( $frag2 )-$intv2e+$frag2Pos;
-        $intv2e = $tmpPos+1;
+        print STDERR "relative intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
+        if ( $strand eq "+" ) {
+            $intv1s += $frag1Pos-1;
+            $intv1e += $frag1Pos;
+            my $tmpPos = length ( $frag2 )-$intv2s+$frag2Pos;
+            $intv2s = length ( $frag2 )-$intv2e+$frag2Pos;
+            $intv2e = $tmpPos+1;
+        }
+        else {
+            my $tmpPos = length ( $frag1 )-$intv1s+$frag1Pos;
+            $intv1s = length ( $frag1 )-$intv1e+$frag1Pos;
+            $intv1e = $tmpPos+1;
+            $intv2s += $frag2Pos-1;
+            $intv2e += $frag2Pos;
+        }
+        print STDERR "alignment: ", $alignment, ", absolute intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
+
+        return ( $alignment, $intv1s, $intv1e, $intv2s, $intv2e );
     }
     else {
-        my $tmpPos = length ( $frag1 )-$intv1s+$frag1Pos;
-        $intv1s = length ( $frag1 )-$intv1e+$frag1Pos;
-        $intv1e = $tmpPos+1;
-        $intv2s += $frag2Pos-1;
-        $intv2e += $frag2Pos;
+        return ( 1, $frag1Pos, $frag1Pos+length($frag1), $frag2Pos, $frag2Pos+length($frag2) );
     }
-    print STDERR "alignment: ", $alignment, ", absolute intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
-
-    return ( $alignment, $intv1s, $intv1e, $intv2s, $intv2e );
 }
 
 
@@ -561,31 +567,37 @@ sub getJuncPair
         return 0;
     }
 
-    $frag2 = reverse ( $frag2 );
-    my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
-    if ( not $maxScore ) {
-        print STDERR "Skip junction that cannot be paired!\n" if ( $opt_V );
-        return 0; 
-    }
+    if ( defined $parameters{useLongestPairing} ) {
+        ## the following is to use longest pairing region to replace the total fragment. 
+        $frag2 = reverse ( $frag2 );
+        my ( $maxScore, $alignment, $intv1s, $intv1e, $intv2s, $intv2e ) = localAlignment ( $frag1, $frag2 );
+        if ( not $maxScore ) {
+            print STDERR "Skip junction that cannot be paired!\n" if ( $opt_V );
+            return 0; 
+        }
 
-    print STDERR "relative intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
-    if ( $strand1 eq "+" ) {
-        $intv1s += $pos1-1;
-        $intv1e += $pos1;
-        my $tmpPos = length ( $frag2 )-$intv2s+$pos2;
-        $intv2s = length ( $frag2 )-$intv2e+$pos2;
-        $intv2e = $tmpPos+1;
+        print STDERR "relative intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
+        if ( $strand1 eq "+" ) {
+            $intv1s += $pos1-1;
+            $intv1e += $pos1;
+            my $tmpPos = length ( $frag2 )-$intv2s+$pos2;
+            $intv2s = length ( $frag2 )-$intv2e+$pos2;
+            $intv2e = $tmpPos+1;
+        }
+        else {
+            my $tmpPos = length ( $frag1 )-$intv1s+$pos1;
+            $intv1s = length ( $frag1 )-$intv1e+$pos1;
+            $intv1e = $tmpPos+1;
+            $intv2s += $pos2-1;
+            $intv2e += $pos2;
+        }
+        print STDERR "alignment: ", $alignment, ", absolute intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
+
+        return ( $alignment, $intv1s, $intv1e, $intv2s, $intv2e );
     }
     else {
-        my $tmpPos = length ( $frag1 )-$intv1s+$pos1;
-        $intv1s = length ( $frag1 )-$intv1e+$pos1;
-        $intv1e = $tmpPos+1;
-        $intv2s += $pos2-1;
-        $intv2e += $pos2;
+        return ( 1, $pos1, $pos1+length($frag1), $pos2, $pos2+length($frag2) );
     }
-    print STDERR "alignment: ", $alignment, ", absolute intervals: ", $intv1s, ",", $intv1e, ",", $intv2s, ",", $intv2e, "\n" if ( $_debug );
-
-    return ( $alignment, $intv1s, $intv1e, $intv2s, $intv2e );
 }
 
 sub checkJuncIntron 
