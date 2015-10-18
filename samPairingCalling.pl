@@ -56,16 +56,17 @@ $0 -i input_sam_file -j chiastic_junction_file -s chiastic_support_sam_file -o o
 # what it is:
  -i     input sam file of spliced alignment
  -j     chiastic junction file
- -s	chiastic junction support alignment file
- -o	output base pair groups
+ -s	    chiastic junction support alignment file
+ -o	    output base pair groups
+
 # more options:
  -g     genome file
- -z	genome size file
+ -z	    genome size file
  -a     annotation file
  -t     transcriptome file
 
- -l	minimum overhang length for valid mapping
- -p	minimum number of supporting reads 
+ -l	    minimum overhang length for valid mapping
+ -p	    minimum number of supporting reads 
  -c 	scoring method (harmonic or geometric)
 _EOH_
 ;
@@ -635,6 +636,9 @@ sub checkContain
                         }
                     }
                 }
+            }
+            else {
+
             }
         }
     }
