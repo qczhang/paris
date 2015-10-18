@@ -89,7 +89,7 @@ sub main
     if ( $samFileList ne "NULL" ) {
         $allSupportSam = $samFileList;
         my @samFiles = split ( /:/, $samFileList );
-        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed ); }
+        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed, removeRedundancy => 1 ); }
     }
     if ( $chiasticFileList ne "NULL" ) {
         if ( $allSupportSam ) { $allSupportSam = $samFileList . ":" . $chiasticSamFileList;  }
