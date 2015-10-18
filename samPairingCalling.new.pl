@@ -95,7 +95,7 @@ sub main
         if ( $allSupportSam ) { $allSupportSam = $samFileList . ":" . $chiasticSamFileList;  }
         else {  $allSupportSam = $chiasticSamFileList;  }
         my @chiasticFiles = split ( /:/, $chiasticFileList );
-        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed ); }
+        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed, removeRedundancy => 1 ); }
     }
 
     my %read_tag = ();
