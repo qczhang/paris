@@ -186,7 +186,10 @@ sub uniqSam
     my $sortedSamFile = shift;
     my $uniqSamFile = shift;
 
+    my $readMap = "tmp.$$.readmap.txt";
+    my %reads = ();
     open ( SAM, $sortedSamFile ) or die ( "Error in reading sam file $sortedSamFile!\n" );
+    open ( MAP, ">$readMap" ) or die ( "Error in opening $readMap for output read id mapping!\n" );
     open ( OUT, ">$uniqSamFile" ) or die ( "Error in opening $uniqSamFile for output uniq SAM!\n" );
     print "read sam file $sortedSamFile...\n\tTime: ", `date`;
     my $seqName = "";  my $pos = 0; my $seq = "";
@@ -200,13 +203,18 @@ sub uniqSam
 
             #last if ( $lineCount > 10 );
             my @data = split ( /\t/, $line );
+
             if ( ( $data[9] ne $seq ) or ( $data[3] != $pos ) or ( $data[2] ne $seqName ) ) {
-                print OUT $line;
+                $seqName = $data[2];
+                $pos = $data[3];
+                $seq = $data[9];
+
                 $uniqCount++;
+                $data[2] = $uniqCount;
+                print OUT join ( "\t", @data );
             }
-            $seqName = $data[2];
-            $pos = $data[3];
-            $seq = $data[9];
+
+            print MAP $data[0], "\t", $uniqCount, "\n";
         }
     }
     close SAM;
@@ -214,6 +222,8 @@ sub uniqSam
 
     print "$lineCount lines read from sam file $sortedSamFile.\n";
     print "among which $uniqCount lines are unique.\n\tTime: ", `date`, "\n";
+
+    exit;
 
     1;
 }
@@ -420,15 +430,16 @@ sub processIntersect
     while ( my $line = <IN> ) {
         chomp $line;
         $lineCount++;
-        if ( $lineCount % 100000 == 0 ) { 
+        if ( $lineCount % 20000 == 0 ) { 
             print "line: $lineCount\t", `date`; 
 
-            for ( my $idx = 0; $idx < 10; $idx++ ) {
-                my $file = "$tmpConnect.$idx";
+            for ( my $idx = 0; $idx < 100; $idx++ ) {
+                my $tag = sprintf ( "%02s", $idx );
+                my $file = "$tmpConnect.$tag";
                 open ( OUT, ">>$file" );
-                print OUT $content{$idx};
+                print OUT $content{$tag};
                 close OUT;
-                $content{$idx} = "";
+                $content{$tag} = "";
             }
         }
 
@@ -438,17 +449,18 @@ sub processIntersect
         foreach my $read1 ( @reads1 ) { 
             foreach my $read2 ( @reads2 ) { 
                 next if ( $read1 eq $read2 );
-                my $fileTag = substr ( $read1, -1 );
+                my $fileTag = substr ( $read1, -2 );
                 $content{$fileTag} .= $read1 . "\t" . $read2 . "\n";
             } 
         }
     }
     close IN;
 
-    for ( my $idx = 0; $idx < 10; $idx++ ) {
-        next if ( not -e "$tmpConnect.$idx" );
-        my $tmpConnectSorted = "tmp.$$.connect.sorted.$idx";
-        print STDERR `sort -i $tmpConnect.$idx -o $tmpConnectSorted`;
+    for ( my $idx = 0; $idx < 100; $idx++ ) {
+        my $tag = sprintf ( "%02s", $idx );
+        next if ( not -e "$tmpConnect.$tag" );
+        my $tmpConnectSorted = "tmp.$$.connect.sorted.$tag";
+        print STDERR `sort -i $tmpConnect.$tag -o $tmpConnectSorted`;
 
         open ( IN, $tmpConnectSorted ) or die "Cannot open $tmpConnectSorted for reading!\n";
         open ( TCC, ">>$duplexConnectFile" ) or die "Cannot open $duplexConnectFile for writing!\n";
@@ -458,17 +470,17 @@ sub processIntersect
         while ( my $line = <IN> ) {
             if ( $line eq $lastLine ) {
                 $connectCount++;
-                $lastLine = $line;
             }
             else {
                 if ( $lastLine ) {
                     chomp $lastLine;
                     print TCC $lastLine, "\t", $connectCount, "\n";
-                    $lastLine = $line;
-                    $connectCount = 1;
                 }
+                $lastLine = $line;
+                $connectCount = 1;
             }
         }
+        chomp $lastLine;
         print TCC $lastLine, "\t", $connectCount, "\n";
         close IN;
         close TCC;
