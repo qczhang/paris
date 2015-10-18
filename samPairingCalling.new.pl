@@ -101,7 +101,7 @@ sub main
     my %read_tag = ();
     genDuplexGroup ( \%read_tag, $duplexGroupBed );
     nonOverlappingTag ( \%read_tag, $readClusterBed );
-    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 'tmp.bed', inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
+    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
     printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
 
     1;
@@ -397,7 +397,7 @@ sub genDuplexGroup
 
     print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
-    print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -wao > $duplexGroupFile`;
+    print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -r -f 0.50 > $duplexGroupFile`;
 
     processIntersect ( $duplexGroupFile, $duplexConnectFile, minOverlap => 10 );
     ## generate proper tags for reads in $ref_read_tag 
@@ -422,8 +422,6 @@ sub processIntersect
         if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\t"; print `date`; }
 
         my @data = split ( /\t/, $line );
-        next if ( $data[12] < $parameters{minOverlap} );
-
         my @reads1 = split ( /;/, $data[3] );
         my @reads2 = split ( /;/, $data[9] );
         foreach my $read1 ( @reads1 ) { 
@@ -435,6 +433,8 @@ sub processIntersect
     }
     close IN;
     close TC;
+
+    return;
 
     my $tmpConnectSorted = "tmp.$$.connect.sorted";
     print STDERR `sort -i $tmpConnect -o $tmpConnectSorted`;
@@ -833,6 +833,7 @@ sub sortCluster
 {
     my %parameters = @_;
 
+    my $tmpClusterBed = "tmp.$$.cluster.bed";
     my %removedCluster = ();
     foreach my $chr ( keys %{$global{dspInterval}} ) {
         foreach my $strand ( keys %{$global{dspInterval}{$chr}} ) {
@@ -888,8 +889,8 @@ sub sortCluster
     }
 
     if ( defined $parameters{outputBed} ) {
-        my $posBed = $parameters{outputBed} . "pos";
-        my $negBed = $parameters{outputBed} . "neg";
+        my $posBed = "tmp.$$.cluster.pos.bed";
+        my $negBed = "tmp.$$.cluster.neg.bed";
         open ( POS, ">$posBed" ); 
         open ( NEG, ">$negBed" ); 
         foreach my $cluster ( keys %{$global{dsPairCluster}} ) {
@@ -903,12 +904,12 @@ sub sortCluster
         close NEG;
 
         mergeSam ( "tmp", $parameters{inputSam}, outputBam => 1 );
-        print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.pos.genomeCov"`; 
-        print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.neg.genomeCov"`; 
-        print STDERR `bedtools intersect -wb -a "tmp.pos.genomeCov" -b $posBed > "tmp.pos.intCov"`; 
-        addGenomeScore ( "tmp.pos.intCov" );
-        print STDERR `bedtools intersect -wb -a "tmp.neg.genomeCov" -b $negBed > "tmp.neg.intCov"`; 
-        addGenomeScore ( "tmp.neg.intCov" );
+        print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand + > "tmp.$$.pos.genomeCov"`; 
+        print STDERR `bedtools genomecov -ibam "tmp.bam" -g $parameters{genomeSizeFile} -bg -strand - > "tmp.$$.neg.genomeCov"`; 
+        print STDERR `bedtools intersect -wb -a "tmp.$$.pos.genomeCov" -b $posBed > "tmp.$$.pos.intCov"`; 
+        addGenomeScore ( "tmp.$$.pos.intCov" );
+        print STDERR `bedtools intersect -wb -a "tmp.$$.neg.genomeCov" -b $negBed > "tmp.$$.neg.intCov"`; 
+        addGenomeScore ( "tmp.$$.neg.intCov" );
     }
 
     1;
