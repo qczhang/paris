@@ -182,12 +182,16 @@ sub genPairClusterFromSamLine
     }
 
     my $strand = ( $data[1] & 16 ) ? "-" : "+";
-    #my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
-    my ( $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
-    #if ( not $alignment ) {
-    #    print STDERR "\t$line\n" if ( $opt_V );
-    #    return 0;
-    #}
+    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getSamPair ( $data[2], $strand, $data[3], $data[5], minOverhang => $environment{minOverhang} );
+    if ( not $alignment ) {
+        print STDERR "No valid duplex: \t$line\n" if ( $opt_V );
+        return 0;
+    }
+    if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) 
+            or ( ( $pair1s < $pair2e ) and ( $pair1e > $pair2s ) ) {
+        print STDERR "inapproprieate duplex: \t$line\n" if ( $opt_V );
+        return 0;
+    }
 
     return 0 if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
@@ -258,14 +262,17 @@ sub genPairClusterFromOneJunction
     }
     if ( not $cigar ) {  print STDERR "\tSkip line of inapproprieate alignment: $line\n" if ( $opt_V );  return 0;  }
 
-    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = 
-	getJuncPair ( $data[0], $data[2], $data[1], $data[10], $data[11], $data[3], $data[5], $data[4], $data[12], $data[13], minOverhang => $environment{minOverhang} );
+    my ( $alignment, $pair1s, $pair1e, $pair2s, $pair2e ) = getJuncPair ( $data[0], $data[2], $data[1], $data[10], $data[11], $data[3], $data[5], $data[4], $data[12], $data[13], minOverhang => $environment{minOverhang} );
     if ( not $alignment ) {
-        print STDERR "\t$line\n" if ( $opt_V );
+        print STDERR "No valid duplex: \t$line\n" if ( $opt_V );
+        return 0;
+    }
+    if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) 
+            or ( ( $pair1s < $pair2e ) and ( $pair1e > $pair2s ) ) {
+        print STDERR "inapproprieate duplex: \t$line\n" if ( $opt_V );
         return 0;
     }
 
-    return 0 if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
     my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
     $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
