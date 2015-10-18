@@ -371,7 +371,7 @@ sub nonOverlappingTag
 
     print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $readClusterBedFile -o $sortedReadClusterBedFile`;
     uniqBed ( $sortedReadClusterBedFile, $uniqReadClusterBedFile, sorted => 1 );
-    print STDERR `bedtools cluster -i $uniqReadClusterBedFile > $readClusterFile`;
+    print STDERR `bedtools cluster -i $uniqReadClusterBedFile -s > $readClusterFile`;
 
     ## generate proper tags for reads in $ref_read_tag 
 }
