@@ -415,10 +415,22 @@ sub processIntersect
     print "  Open intersect file $duplexGroupFile for reading\n";
     my $tmpConnect = "tmp.$$.connect";
     my $lineCount = 0;
+
+    my %content = ();
     while ( my $line = <IN> ) {
         chomp $line;
         $lineCount++;
-        if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\t"; print `date`; }
+        if ( $lineCount % 10000 == 0 ) { 
+            print "line: $lineCount\t", `date`; 
+
+            for ( my $idx = 0; $idx < 10; $idx++ ) {
+                my $file = "$tmpConnect.$idx";
+                open ( OUT, ">>$file" );
+                print OUT $content{$idx};
+                close OUT;
+                $content{$idx} = "";
+            }
+        }
 
         my @data = split ( /\t/, $line );
         my @reads1 = split ( /;/, $data[3] );
@@ -427,7 +439,7 @@ sub processIntersect
             foreach my $read2 ( @reads2 ) { 
                 next if ( $read1 eq $read2 );
                 my $fileTag = substr ( $read1, -1 );
-                print STDERR `echo $read1\t$read2 >> $tmpConnect.$fileTag`;
+                $content{$fileTag} .= $read1 . "\t" . $read2 . "\n";
             } 
         }
     }
