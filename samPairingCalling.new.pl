@@ -276,8 +276,11 @@ sub genPairClusterFromOneJunction
     my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
     $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
-    if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[9], ".", $data[2] ) . "\n"; }
-    
+    if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { 
+        if ( $pair1s < $pair2s ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[9], ".", $data[2] ) . "\n"; }
+        else { $intervalBed = join ( "\t", $data[0], $pair2s, $pair1e, $data[9], ".", $data[2] ) . "\n"; }
+    }
+
     return ( $stemBed, $intervalBed );
     
     1;
