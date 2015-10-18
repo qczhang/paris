@@ -138,6 +138,16 @@ sub genPairClusterFromSamFile
     my $samFile = shift;
     my %parameters = @_;
 
+    if ( $parameters{removeRedundancy} ) {
+        print STDERR "Remove redundancy in input SAM file $samFile.\t", `date`;
+        my $sortedSamFile = "tmp.$$.sorted.sam";
+        my $uniqSamFile = "tmp.$$.uniq.sam";
+        print STDERR `grep "^@" $samFile > $sortedSamFile`;
+        print STDERR `grep -v "^@" $samFile | sort -k3,3 -k4,4n -k10,10 >> $sortedSamFile`;
+        uniqSam ( $sortedSamFile, $uniqSamFile );
+        $samFile = $uniqSamFile;
+    }
+
     my $lineCount = 0;
     my $validCount = 0;
     open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
@@ -169,6 +179,43 @@ sub genPairClusterFromSamFile
     print "among which $validCount lines generate supports for base pairing.\n\tTime: ", `date`, "\n";
 
     return ( $lineCount, $validCount );
+}
+
+sub uniqSam 
+{
+    my $sortedSamFile = shift;
+    my $uniqSamFile = shift;
+
+    open ( SAM, $sortedSamFile ) or die ( "Error in reading sam file $sortedSamFile!\n" );
+    open ( OUT, ">$uniqSamFile" ) or die ( "Error in opening $uniqSamFile for output uniq SAM!\n" );
+    print "read sam file $sortedSamFile...\n\tTime: ", `date`;
+    my $seqName = "";  my $pos = 0; my $seq = "";
+    my $lineCount = 0; my $uniqCount = 0;
+    while ( my $line = <SAM> ) {
+        next if ( $line =~ /^#/ );
+        if ( $line =~ /^@/ ) { print OUT $line; }
+        else {
+            $lineCount++;
+            if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
+
+            #last if ( $lineCount > 10 );
+            my @data = split ( /\t/, $line );
+            if ( ( $data[9] ne $seq ) or ( $data[3] != $pos ) or ( $data[2] ne $seqName ) ) {
+                print OUT $line;
+                $uniqCount++;
+            }
+            $seqName = $data[2];
+            $pos = $data[3];
+            $seq = $data[9];
+        }
+    }
+    close SAM;
+    close OUT;
+
+    print "$lineCount lines read from sam file $sortedSamFile.\n";
+    print "among which $uniqCount lines are unique.\n\tTime: ", `date`, "\n";
+
+    1;
 }
 
 sub genPairClusterFromSamLine
