@@ -49,23 +49,23 @@ use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt
 
 my $usage = <<_EOH_;
 ## --------------------------------------
-call base pair groups from PARIS sequencing
-Command:
-$0 -i input_sam_file -j chiastic_junction_file -s chiastic_support_sam_file -o output_read_group
-# what it is:
- -i     input sam file of spliced alignment
- -j     chiastic junction file
- -s	chiastic junction support alignment file
- -o	output base pair groups
-# more options:
- -g     genome file
- -z	genome size file
- -a     annotation file
- -t     transcriptome file
+ call base pair groups from PARIS sequencing
+ Command:
+  $0 -i input_sam_file -j chiastic_junction_file -s chiastic_support_sam_file -o output_read_group
+ # what it is:
+  -i     input sam file of spliced alignment
+  -j     chiastic junction file
+  -s	 chiastic junction support alignment file
+  -o	 output base pair groups
+ # more options:
+  -g     genome file
+  -z	 genome size file
+  -a     annotation file
+  -t     transcriptome file
 
- -l	minimum overhang length for valid mapping
- -p	minimum number of supporting reads 
- -c 	scoring method (harmonic or geometric)
+  -l	minimum overhang length for valid mapping
+  -p	minimum number of supporting reads 
+  -c 	scoring method (harmonic or geometric)
 _EOH_
 ;
 
@@ -84,24 +84,24 @@ sub main
 #    $global{annotation} = loadGTF ( $parameters{annotationFile} );
     $global{genomeSeq} = loadGenome ( $parameters{genomeFile} );
 
+    my %read = ();
     my $allSupportSam = "";
-    my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
-    my $readClusterBed = "tmp.$$.readCluster.bed";
     if ( $samFileList ne "NULL" ) {
         $allSupportSam = $samFileList;
         my @samFiles = split ( /:/, $samFileList );
-        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed, removeRedundancy => 1 ); }
+        foreach my $samFile ( @samFiles ) { genPairClusterFromSamFile ( $samFile, \%read, removeRedundancy => 1 ); }
     }
     if ( $chiasticFileList ne "NULL" ) {
         if ( $allSupportSam ) { $allSupportSam = $samFileList . ":" . $chiasticSamFileList;  }
         else {  $allSupportSam = $chiasticSamFileList;  }
         my @chiasticFiles = split ( /:/, $chiasticFileList );
-        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed, removeRedundancy => 1 ); }
+        foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, \%read, removeRedundancy => 1 ); }
     }
 
-    my %duplexGroup = (); my %read_dgTag = (); my %read_ngTag = ();
-    genDuplexGroup ( \%duplexGroup, \%read_dgTag, $duplexGroupBed );
-    nonOverlappingTag ( \%read_ngTag, $readClusterBed );
+    my %duplexGroup = (); 
+    genDuplexGroup ( \%duplexGroup, \%read );
+    nonOverlappingTag ( \%read );
+    printDuplexGroup ( $outputFile, method => $parameters{scoringMethod} );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
 #    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
@@ -138,7 +138,11 @@ sub init {
 sub genPairClusterFromSamFile
 {
     my $samFile = shift;
+    my $ref_read = shift;
     my %parameters = @_;
+
+    my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
+    my $readClusterBed = "tmp.$$.readCluster.bed";
 
     if ( $parameters{removeRedundancy} ) {
         print STDERR "Remove redundancy in input SAM file $samFile.\t", `date`;
@@ -146,15 +150,15 @@ sub genPairClusterFromSamFile
         my $uniqSamFile = "tmp.$$.uniq.sam";
         print STDERR `grep "^@" $samFile > $sortedSamFile`;
         print STDERR `grep -v "^@" $samFile | sort -k3,3 -k4,4n -k10,10 >> $sortedSamFile`;
-        uniqSam ( $sortedSamFile, $uniqSamFile );
+        uniqSam ( $sortedSamFile, $uniqSamFile, $ref_read );
         $samFile = $uniqSamFile;
     }
 
     my $lineCount = 0;
     my $validCount = 0;
     open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
-    open ( DG, ">>$parameters{duplexGroup}" ) or die ( "Error in opening $parameters{duplexGroup} for output read duplex groups!\n" );
-    open ( RC, ">>$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
+    open ( DG, ">>$duplexGroupBed" ) or die ( "Error in opening $duplexGroupBed for output read duplex groups!\n" );
+    open ( RC, ">>$readClusterBed" ) or die ( "Error in opening $readClusterBed for output read clusters!\n" );
     print "read sam file $samFile...\n\tTime: ", `date`;
     while ( my $line = <SAM> ) {
         next if ( $line =~ /^#/ );
@@ -166,8 +170,8 @@ sub genPairClusterFromSamFile
                 print "\tvalid line: $validCount\n\t", `date`;
             }
 
-            #last if ( $lineCount > 10 );
-            my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line );
+            last if ( $lineCount > 200 );
+            my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line, $ref_read );
             if ( $duplexStemLine ) {
                 print DG $duplexStemLine;
                 print RC $duplexIntervalLine;
@@ -187,6 +191,7 @@ sub uniqSam
 {
     my $sortedSamFile = shift;
     my $uniqSamFile = shift;
+    my $ref_read = shift;
 
     my $readMap = "tmp.$$.readmap.txt";
     my %reads = ();
@@ -203,7 +208,7 @@ sub uniqSam
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            #last if ( $lineCount > 10 );
+            last if ( $lineCount > 1000 );
             my @data = split ( /\t/, $line );
 
             if ( ( $data[9] ne $seq ) or ( $data[3] != $pos ) or ( $data[2] ne $seqName ) ) {
@@ -215,6 +220,7 @@ sub uniqSam
                 print MAP $data[0], "\t", $global{readUniqCount}, "\n";
                 $data[0] = $global{readUniqCount};
                 print OUT join ( "\t", @data );
+                $ref_read->{$global{readUniqCount}}{name} = $data[0];
             }
             else {
                 print MAP $data[0], "\t", $global{readUniqCount}, "\n";
@@ -234,6 +240,7 @@ sub uniqSam
 sub genPairClusterFromSamLine
 {
     my $line = shift;
+    my $ref_read = shift;
 
     my @data = split ( /\t/, $line );
     if ( $data[5] !~ /[ND]/ ) {
@@ -253,7 +260,15 @@ sub genPairClusterFromSamLine
         return 0;
     }
 
-    return 0 if ( ( $pair1s == $pair2s ) or ( $pair1e == $pair2e ) );
+    $ref_read->{$data[0]}{1}{chr} = $data[2];
+    $ref_read->{$data[0]}{1}{strand} = $strand;
+    $ref_read->{$data[0]}{1}{start} = $pair1s;
+    $ref_read->{$data[0]}{1}{end} = $pair1e;
+    $ref_read->{$data[0]}{2}{chr} = $data[2];
+    $ref_read->{$data[0]}{2}{strand} = $strand;
+    $ref_read->{$data[0]}{2}{start} = $pair2s;
+    $ref_read->{$data[0]}{2}{end} = $pair2e;
+
     my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
     $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "2", $strand ) . "\n";
     my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], ".", $strand ) . "\n";
@@ -266,7 +281,11 @@ sub genPairClusterFromSamLine
 sub genPairClusterFromJunctionFile
 {
     my $junctionFile = shift;
+    my $ref_read = shift;
     my %parameters = @_;
+
+    my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
+    my $readClusterBed = "tmp.$$.readCluster.bed";
 
     if ( $parameters{removeRedundancy} ) {
         print STDERR "Remove redundancy in input Junction file $junctionFile.\t", `date`;
@@ -280,8 +299,8 @@ sub genPairClusterFromJunctionFile
     my $lineCount = 0;
     my $validCount = 0;
     open ( JUNC, $junctionFile ) or die ( "Error in reading junction file $junctionFile!\n" );
-    open ( DG, ">>$parameters{duplexGroup}" ) or die ( "Error in opening $parameters{duplexGroup} for output read duplex groups!\n" );
-    open ( RC, ">>$parameters{readCluster}" ) or die ( "Error in opening $parameters{readCluster} for output read clusters!\n" );
+    open ( DG, ">>$duplexGroupBed" ) or die ( "Error in opening $duplexGroupBed for output read duplex groups!\n" );
+    open ( RC, ">>$readClusterBed" ) or die ( "Error in opening $readClusterBed for output read clusters!\n" );
     print "read junction file $junctionFile...\n\tTime: ", `date`;
     while ( my $line = <JUNC> ) {
         next if ( $line =~ /^#/ );
@@ -291,8 +310,8 @@ sub genPairClusterFromJunctionFile
             print "\tvalid line: $validCount\n\t", `date`;
         }
 
-        print "line: $lineCount\n\t", `date` if ( $lineCount % 100000 == 0 );
-        my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line );
+        #last if ( $lineCount > 10000 );
+        my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line, $ref_read );
         if ( $duplexStemLine ) {
             print DG $duplexStemLine;
             print RC $duplexIntervalLine;
@@ -362,6 +381,7 @@ sub uniqJunction
 sub genPairClusterFromOneJunction
 {
     my $line = shift;
+    my $ref_read = shift;
 
     chomp $line;
     my @data = split ( /\t/, $line );
@@ -394,6 +414,15 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
+    $ref_read->{$data[9]}{1}{chr} = $data[0];
+    $ref_read->{$data[9]}{1}{strand} = $data[2];
+    $ref_read->{$data[9]}{1}{start} = $pair1s;
+    $ref_read->{$data[9]}{1}{end} = $pair1e;
+    $ref_read->{$data[9]}{2}{chr} = $data[3];
+    $ref_read->{$data[9]}{2}{strand} = $data[5];
+    $ref_read->{$data[9]}{2}{start} = $pair2s;
+    $ref_read->{$data[9]}{2}{end} = $pair2e;
+
     my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
     $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
@@ -410,9 +439,9 @@ sub genPairClusterFromOneJunction
 sub genDuplexGroup 
 {
     my $ref_duplexGroup = shift;
-    my $ref_read_tag = shift;
-    my $duplexGroupBedFile = shift;
+    my $ref_read = shift;
 
+    my $duplexGroupBedFile = "tmp.$$.duplexGroup.bed";
     my $sortedDuplexGroupBedFile = $duplexGroupBedFile . ".sorted";
     my $uniqDuplexGroupBedFile = $duplexGroupBedFile . ".uniq";
     my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
@@ -424,30 +453,33 @@ sub genDuplexGroup
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -r -f 0.50 > $duplexGroupFile`;
     processIntersect ( $duplexGroupFile, $duplexConnectFile, minOverlap => 10 );
 
-    ## generate proper tags for reads in $ref_read_tag 
-    #print STDERR `jave bin/xxx.java -i $duplexConnectFile, $duplexCliqueFile`;
-    genDuplexGroupID ( $ref_duplexGroup, $ref_read_tag, $duplexCliqueFile, mode => "exclusive" );
+    ## generate proper tags for reads in $ref_read 
+    print STDERR `java -jar bin/maximalClique.jar -i $duplexConnectFile > $duplexCliqueFile`;
+    clique2DuplexGroup ( $ref_duplexGroup, $ref_read, $duplexCliqueFile, mode => "multiple" );
 }
 
 
-sub genDuplexGroupID
+sub clique2DuplexGroup
 {
-    my $ref_read_tag = shift;
+    my $ref_duplexGroup = shift;
+    my $ref_read = shift;
     my $duplexCliqueFile = shift;
     my %parameters = @_;
 
     my $cliqueID = 0;
     open ( CL, $duplexCliqueFile );
-    if ( $parameters{mode} eq "multipleDuplexGroup" ) {
+    if ( $parameters{mode} eq "multiple" ) {
         while ( my $line = <CL> ) {
             next if ( $line =~ /^#/ );
 
             $cliqueID++;
             chomp $line;
-            my @data = split ( /\t/, $line );
+            my ( $count, @data ) = split ( /\t/, $line );
             foreach my $read ( @data ) {
-                if ( defined $ref_read_tag->{$read} ) { $ref_read_tag->{$read} .= ";$cliqueID"; }
-                else { $ref_read_tag->{$read} = "$cliqueID"; }
+                if ( defined $ref_read->{$read} ) { $ref_read->{$read}{clique} .= ";$cliqueID"; }
+                else { $ref_read->{$read}{clique} = "$cliqueID"; }
+
+                updateClique ( $ref_duplexGroup->{$cliqueID}, $ref_read->{$read}, $read );
             }
         }
     }
@@ -457,14 +489,105 @@ sub genDuplexGroupID
 
             $cliqueID++;
             chomp $line;
-            my @data = split ( /\t/, $line );
+            my ( $count, @data ) = split ( /\t/, $line );
             foreach my $read ( @data ) {
-                if ( not defined $ref_read_tag->{$read} ) { $ref_read_tag->{$read} = "$cliqueID"; }
-                ## assume cliques are ranked from big to small
+                if ( not defined $ref_read->{$read} ) { $ref_read->{$read}{clique} = "$cliqueID"; } ## assume cliques are ranked from big to small
+
+                updateClique ( $ref_duplexGroup->{$cliqueID}, $ref_read->{$read}, $read );
             }
         }
     }
     close CL;
+}
+
+sub updateClique
+{
+    my $ref_clique = shift;
+    my $ref_read = shift;
+    my $readID = shift;
+
+    if ( not defined $ref_read ) {
+        print STDERR "Error! read not defined!\n"; 
+        return 0;
+    }
+    if ( not defined $ref_clique ) {
+        $ref_clique->{reads} = $readID;
+        $ref_clique->{1}{chr} = $ref_read->{1}{chr};
+        $ref_clique->{1}{strand} = $ref_read->{1}{strand};
+        $ref_clique->{1}{start} = $ref_read->{1}{start};
+        $ref_clique->{1}{end} = $ref_read->{1}{end};
+        $ref_clique->{2}{chr} = $ref_read->{2}{chr};
+        $ref_clique->{2}{strand} = $ref_read->{2}{strand};
+        $ref_clique->{2}{start} = $ref_read->{2}{start};
+        $ref_clique->{2}{end} = $ref_read->{2}{end};
+    }
+    else {
+        $ref_clique->{reads} .= ";$readID";
+        if ( $ref_clique->{1}{chr} ne $ref_read->{1}{chr} ) {
+            print STDERR "Error! read not in different sequence as existing clique!\n"; 
+            return 0;
+        }
+        if ( $ref_clique->{1}{strand} ne $ref_read->{1}{strand} ) {
+            print STDERR "Error! read not in different strand as existing clique!\n"; 
+            return 0;
+        }
+        if ( $ref_clique->{2}{chr} ne $ref_read->{2}{chr} ) {
+            print STDERR "Error! read not in different sequence as existing clique!\n"; 
+            return 0;
+        }
+        if ( $ref_clique->{2}{strand} ne $ref_read->{2}{strand} ) {
+            print STDERR "Error! read not in different strand as existing clique!\n"; 
+            return 0;
+        }
+        $ref_clique->{1}{start} = $ref_read->{1}{start} if ( $ref_clique->{1}{start} > $ref_read->{1}{start} );
+        $ref_clique->{1}{end} = $ref_read->{1}{end} if ( $ref_clique->{1}{end} < $ref_read->{1}{end} );
+        $ref_clique->{2}{start} = $ref_read->{2}{start} if ( $ref_clique->{2}{start} > $ref_read->{2}{start} );
+        $ref_clique->{2}{end} = $ref_read->{2}{end} if ( $ref_clique->{2}{end} < $ref_read->{2}{end} );
+    }
+
+    1;
+}
+
+sub printDuplexGroup
+{
+    my $outputFile = shift;
+    my $ref_clique = shift;
+    my $ref_read = shift;
+    my %parameters = @_;
+
+    print "Output duplex groups to file $outputFile. \t", `data`;
+    open ( OUT, ">$outputFile" ) or die "Cannot open file $outputFile for writing!\n";
+    
+    my $duplexGroup = 0;
+    foreach my $dg ( sort { $ref_clique->{$a}{1}{chr} cmp $ref_clique->{$b}{1}{chr} or 
+                            $ref_clique->{$a}{1}{strand} cmp $ref_clique->{$b}{1}{strand} or
+                            $ref_clique->{$a}{1}{start} cmp $ref_clique->{$b}{1}{start} or
+                            $ref_clique->{$a}{1}{end} cmp $ref_clique->{$b}{1}{end} or
+                            $ref_clique->{$a}{2}{chr} cmp $ref_clique->{$b}{2}{chr} or
+                            $ref_clique->{$a}{2}{strand} cmp $ref_clique->{$b}{2}{strand} or
+                            $ref_clique->{$a}{2}{start} cmp $ref_clique->{$b}{2}{start} or
+                            $ref_clique->{$a}{2}{end} cmp $ref_clique->{$b}{2}{end} } keys %{$ref_clique} ) {
+           $duplexGroup++;
+
+           my @reads = split ( /;/, $ref_clique->{$dg}{reads} );
+           my $support = scalar(@reads);
+           print OUT "Group $duplexGroup == position "; 
+           print OUT $ref_clique->{$dg}{1}{chr}, "(", $ref_clique->{$dg}{1}{strand}, "):";
+           print OUT $ref_clique->{$dg}{1}{start}, "-", $ref_clique->{$dg}{1}{end};
+           print OUT "|", $ref_clique->{$dg}{2}{chr}, "(", $ref_clique->{$dg}{2}{strand}, "):";
+           print OUT $ref_clique->{$dg}{2}{start}, "-", $ref_clique->{$dg}{2}{end};
+           print OUT ", support ", $support, "\n";
+
+           for ( my $idx = 0; $idx < scalar ( @reads ); $idx++ ) {
+               print OUT "  ", $reads[$idx];
+               print OUT "\n";
+           }
+   }
+   close OUT;
+
+   print "$duplexGroup clusteres output to file $outputFile.\n\tTime: ", `date`, "\n";
+
+   1;
 }
 
 sub processIntersect
@@ -528,7 +651,7 @@ sub processIntersect
             else {
                 if ( $lastLine ) {
                     chomp $lastLine;
-                    print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount == 2 );
+                    print TCC $lastLine, "\n" if ( $connectCount == 2 );
                     print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
                 }
                 $lastLine = $line;
@@ -545,9 +668,9 @@ sub processIntersect
 
 sub nonOverlappingTag 
 {
-    my $ref_read_tag = shift;
-    my $readClusterBedFile = shift;
+    my $ref_read = shift;
 
+    my $readClusterBedFile = "tmp.$$.readCluster.bed";
     my $sortedReadClusterBedFile = $readClusterBedFile . ".sorted";
     my $uniqReadClusterBedFile = $readClusterBedFile . ".uniq";
     my $readClusterFile = $readClusterBedFile . ".cluster";
@@ -556,7 +679,18 @@ sub nonOverlappingTag
     uniqBed ( $sortedReadClusterBedFile, $uniqReadClusterBedFile, sorted => 1 );
     print STDERR `bedtools cluster -i $uniqReadClusterBedFile -s > $readClusterFile`;
 
-    ## generate proper tags for reads in $ref_read_tag 
+    ## generate proper tags for reads in $ref_read 
+    open ( CL, $readClusterFile );
+    while ( my $line = <CL> ) {
+        chomp $line;
+        my @data = split ( /\t/, $line );
+        my @reads = split ( /;/, $data[3] );
+
+        foreach my $read ( @reads ) { $ref_read->{$read}{cluster} = $data[6]; }
+    }
+    close CL;
+
+    1;
 }
 
 sub uniqBed 
