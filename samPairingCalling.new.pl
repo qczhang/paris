@@ -99,11 +99,12 @@ sub main
         foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, duplexGroup => $duplexGroupBed, readCluster => $readClusterBed, removeRedundancy => 1 ); }
     }
 
-    my %read_tag = ();
-    genDuplexGroup ( \%read_tag, $duplexGroupBed );
-    nonOverlappingTag ( \%read_tag, $readClusterBed );
-    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
-    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
+    my %duplexGroup = (); my %read_dgTag = (); my %read_ngTag = ();
+    genDuplexGroup ( \%duplexGroup, \%read_dgTag, $duplexGroupBed );
+    nonOverlappingTag ( \%read_ngTag, $readClusterBed );
+
+#    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
+#    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
 
     1;
 }
@@ -358,7 +359,6 @@ sub uniqJunction
     1;
 }
 
-
 sub genPairClusterFromOneJunction
 {
     my $line = shift;
@@ -409,6 +409,7 @@ sub genPairClusterFromOneJunction
 
 sub genDuplexGroup 
 {
+    my $ref_duplexGroup = shift;
     my $ref_read_tag = shift;
     my $duplexGroupBedFile = shift;
 
@@ -416,13 +417,54 @@ sub genDuplexGroup
     my $uniqDuplexGroupBedFile = $duplexGroupBedFile . ".uniq";
     my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
     my $duplexConnectFile = $duplexGroupBedFile . ".connect";
+    my $duplexCliqueFile = $duplexGroupBedFile . ".clique";
 
     print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $duplexGroupBedFile -o $sortedDuplexGroupBedFile`;
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -r -f 0.50 > $duplexGroupFile`;
-
     processIntersect ( $duplexGroupFile, $duplexConnectFile, minOverlap => 10 );
+
     ## generate proper tags for reads in $ref_read_tag 
+    #print STDERR `jave bin/xxx.java -i $duplexConnectFile, $duplexCliqueFile`;
+    genDuplexGroupID ( $ref_duplexGroup, $ref_read_tag, $duplexCliqueFile, mode => "exclusive" );
+}
+
+
+sub genDuplexGroupID
+{
+    my $ref_read_tag = shift;
+    my $duplexCliqueFile = shift;
+    my %parameters = @_;
+
+    my $cliqueID = 0;
+    open ( CL, $duplexCliqueFile );
+    if ( $parameters{mode} eq "multipleDuplexGroup" ) {
+        while ( my $line = <CL> ) {
+            next if ( $line =~ /^#/ );
+
+            $cliqueID++;
+            chomp $line;
+            my @data = split ( /\t/, $line );
+            foreach my $read ( @data ) {
+                if ( defined $ref_read_tag->{$read} ) { $ref_read_tag->{$read} .= ";$cliqueID"; }
+                else { $ref_read_tag->{$read} = "$cliqueID"; }
+            }
+        }
+    }
+    elsif ( $parameters{mode} eq "exclusive" ) {
+        while ( my $line = <CL> ) {
+            next if ( $line =~ /^#/ );
+
+            $cliqueID++;
+            chomp $line;
+            my @data = split ( /\t/, $line );
+            foreach my $read ( @data ) {
+                if ( not defined $ref_read_tag->{$read} ) { $ref_read_tag->{$read} = "$cliqueID"; }
+                ## assume cliques are ranked from big to small
+            }
+        }
+    }
+    close CL;
 }
 
 sub processIntersect
@@ -872,7 +914,6 @@ sub sortCluster
 {
     my %parameters = @_;
 
-    my $tmpClusterBed = "tmp.$$.cluster.bed";
     my %removedCluster = ();
     foreach my $chr ( keys %{$global{dspInterval}} ) {
         foreach my $strand ( keys %{$global{dspInterval}{$chr}} ) {
