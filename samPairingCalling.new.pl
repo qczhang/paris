@@ -460,8 +460,8 @@ sub processIntersect
         my @reads2 = split ( /;/, $data[9] );
         foreach my $read1 ( @reads1 ) { 
             foreach my $read2 ( @reads2 ) { 
-                next if ( $read1 eq $read2 );
-                my $fileTag = substr ( $read1, -2 );
+                next if ( $read1 >= $read2 );
+                my $fileTag = sprintf ( "%02s", substr ( $read1, -2 ) );
                 $content{$fileTag} .= $read1 . "\t" . $read2 . "\n";
             } 
         }
@@ -486,14 +486,16 @@ sub processIntersect
             else {
                 if ( $lastLine ) {
                     chomp $lastLine;
-                    print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount > 1 );
+                    print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount == 2 );
+                    print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
                 }
                 $lastLine = $line;
                 $connectCount = 1;
             }
         }
         chomp $lastLine;
-        print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount > 1 );
+        print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount == 2 );
+        print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
         close IN;
         close TCC;
     }
