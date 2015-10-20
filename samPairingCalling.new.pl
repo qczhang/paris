@@ -621,10 +621,12 @@ sub processIntersect
             for ( my $idx = 0; $idx < 100; $idx++ ) {
                 my $tag = sprintf ( "%02s", $idx );
                 my $file = "$tmpConnect.$tag";
-                open ( OUT, ">>$file" );
-                print OUT $content{$tag} if ( defined $content{$tag} );
-                close OUT;
-                $content{$tag} = "";
+                if ( defined $content{$tag} ) {
+                    open ( OUT, ">>$file" );
+                    print OUT $content{$tag};
+                    close OUT;
+                    $content{$tag} = "";
+                }
             }
         }
 
@@ -643,9 +645,11 @@ sub processIntersect
     for ( my $idx = 0; $idx < 100; $idx++ ) {
         my $tag = sprintf ( "%02s", $idx );
         my $file = "$tmpConnect.$tag";
-        open ( OUT, ">>$file" );
-        print OUT $content{$tag} if ( defined $content{$tag} );
-        close OUT;
+        if ( defined $content{$tag} ) {
+            open ( OUT, ">>$file" );
+            print OUT $content{$tag};
+            close OUT;
+        }
     }
 
     for ( my $idx = 0; $idx < 100; $idx++ ) {
