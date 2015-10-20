@@ -691,7 +691,7 @@ sub nonOverlappingTag
     ## generate proper tags for reads in $ref_read 
     open ( CL, $readClusterFile );
     my $ngTag = 0;
-    my $clusterID = "";
+    my $clusterID = 0;
     while ( my $line = <CL> ) {
         chomp $line;
         my @data = split ( /\t/, $line );
