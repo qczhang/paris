@@ -101,7 +101,7 @@ sub main
     my %duplexGroup = (); 
     genDuplexGroup ( \%duplexGroup, \%read );
     nonOverlappingTag ( \%read );
-    printDuplexGroup ( $outputFile, method => $parameters{scoringMethod} );
+    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, method => $parameters{scoringMethod} );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
 #    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
@@ -170,7 +170,7 @@ sub genPairClusterFromSamFile
                 print "\tvalid line: $validCount\n\t", `date`;
             }
 
-            last if ( $lineCount > 200 );
+            #last if ( $lineCount > 10 );
             my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line, $ref_read );
             if ( $duplexStemLine ) {
                 print DG $duplexStemLine;
@@ -208,7 +208,7 @@ sub uniqSam
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            last if ( $lineCount > 1000 );
+            last if ( $lineCount > 20 );
             my @data = split ( /\t/, $line );
 
             if ( ( $data[9] ne $seq ) or ( $data[3] != $pos ) or ( $data[2] ne $seqName ) ) {
@@ -347,7 +347,7 @@ sub uniqJunction
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            #last if ( $lineCount > 10 );
+            last if ( $lineCount > 10 );
             my @data = split ( /\t/, $line );
             if ( ( $data[10] != $pos1 ) or ( $data[12] != $pos2 ) 
                     or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
@@ -474,8 +474,9 @@ sub clique2DuplexGroup
 
             $cliqueID++;
             chomp $line;
-            my ( $count, @data ) = split ( /\t/, $line );
+            my ( $count, @data ) = split ( /\s/, $line );
             foreach my $read ( @data ) {
+                next if ( not $read );
                 if ( defined $ref_read->{$read} ) { $ref_read->{$read}{clique} .= ";$cliqueID"; }
                 else { $ref_read->{$read}{clique} = "$cliqueID"; }
 
@@ -489,8 +490,9 @@ sub clique2DuplexGroup
 
             $cliqueID++;
             chomp $line;
-            my ( $count, @data ) = split ( /\t/, $line );
+            my ( $count, @data ) = split ( /\s/, $line );
             foreach my $read ( @data ) {
+                next if ( not $read );
                 if ( not defined $ref_read->{$read} ) { $ref_read->{$read}{clique} = "$cliqueID"; } ## assume cliques are ranked from big to small
 
                 updateClique ( $ref_duplexGroup->{$cliqueID}, $ref_read->{$read}, $read );
@@ -555,7 +557,7 @@ sub printDuplexGroup
     my $ref_read = shift;
     my %parameters = @_;
 
-    print "Output duplex groups to file $outputFile. \t", `data`;
+    print "Output duplex groups to file $outputFile. \t", `date`;
     open ( OUT, ">$outputFile" ) or die "Cannot open file $outputFile for writing!\n";
     
     my $duplexGroup = 0;
@@ -614,7 +616,7 @@ sub processIntersect
                 my $tag = sprintf ( "%02s", $idx );
                 my $file = "$tmpConnect.$tag";
                 open ( OUT, ">>$file" );
-                print OUT $content{$tag};
+                print OUT $content{$tag} if ( defined $content{$tag} );
                 close OUT;
                 $content{$tag} = "";
             }
@@ -632,6 +634,13 @@ sub processIntersect
         }
     }
     close IN;
+    for ( my $idx = 0; $idx < 100; $idx++ ) {
+        my $tag = sprintf ( "%02s", $idx );
+        my $file = "$tmpConnect.$tag";
+        open ( OUT, ">>$file" );
+        print OUT $content{$tag} if ( defined $content{$tag} );
+        close OUT;
+    }
 
     for ( my $idx = 0; $idx < 100; $idx++ ) {
         my $tag = sprintf ( "%02s", $idx );
@@ -659,7 +668,7 @@ sub processIntersect
             }
         }
         chomp $lastLine;
-        print TCC $lastLine, "\t", $connectCount, "\n" if ( $connectCount == 2 );
+        print TCC $lastLine, "\n" if ( $connectCount == 2 );
         print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
         close IN;
         close TCC;
@@ -681,12 +690,29 @@ sub nonOverlappingTag
 
     ## generate proper tags for reads in $ref_read 
     open ( CL, $readClusterFile );
+    my $ngTag = 0;
+    my $clusterID = "";
     while ( my $line = <CL> ) {
         chomp $line;
         my @data = split ( /\t/, $line );
         my @reads = split ( /;/, $data[3] );
 
-        foreach my $read ( @reads ) { $ref_read->{$read}{cluster} = $data[6]; }
+        if ( $clusterID == $data[6] ) {
+            foreach my $read ( @reads ) { 
+                $ref_read->{$read}{cluster} = $data[6]; 
+                $ngTag++;
+                $ref_read->{$read}{ngTag} = $ngTag; 
+            }
+        }
+        else {
+            $clusterID = $data[6];
+            $ngTag = 0;
+            foreach my $read ( @reads ) { 
+                $ref_read->{$read}{cluster} = $data[6]; 
+                $ngTag++;
+                $ref_read->{$read}{ngTag} = $ngTag; 
+            }
+        }
     }
     close CL;
 
