@@ -467,6 +467,7 @@ sub clique2DuplexGroup
     my %parameters = @_;
 
     my $cliqueID = 0;
+    print "Now process reads cliques to generate alternative duplex structures\t", `date`;
     open ( CL, $duplexCliqueFile );
     if ( $parameters{mode} eq "multiple" ) {
         while ( my $line = <CL> ) {
@@ -474,7 +475,8 @@ sub clique2DuplexGroup
 
             $cliqueID++;
             chomp $line;
-            my ( $count, @data ) = split ( /\s/, $line );
+            #my ( $count, @data ) = split ( /\s/, $line );
+            my ( @data ) = split ( /\s/, $line );
             foreach my $read ( @data ) {
                 next if ( not $read );
                 if ( defined $ref_read->{$read} ) { $ref_read->{$read}{clique} .= ";$cliqueID"; }
@@ -490,7 +492,8 @@ sub clique2DuplexGroup
 
             $cliqueID++;
             chomp $line;
-            my ( $count, @data ) = split ( /\s/, $line );
+            #my ( $count, @data ) = split ( /\s/, $line );
+            my ( @data ) = split ( /\s/, $line );
             foreach my $read ( @data ) {
                 next if ( not $read );
                 if ( not defined $ref_read->{$read} ) { $ref_read->{$read}{clique} = "$cliqueID"; } ## assume cliques are ranked from big to small
@@ -500,6 +503,9 @@ sub clique2DuplexGroup
         }
     }
     close CL;
+    print "Now process reads cliques to generate alternative duplex structures\t", `date`;
+
+    1;
 }
 
 sub updateClique
@@ -679,6 +685,7 @@ sub nonOverlappingTag
 {
     my $ref_read = shift;
 
+    print "Now cluster reads for visualization!\t", `date`;
     my $readClusterBedFile = "tmp.$$.readCluster.bed";
     my $sortedReadClusterBedFile = $readClusterBedFile . ".sorted";
     my $uniqReadClusterBedFile = $readClusterBedFile . ".uniq";
@@ -715,6 +722,7 @@ sub nonOverlappingTag
         }
     }
     close CL;
+    print "Finally $clusterID clusters discovered!\t", `date`;
 
     1;
 }
