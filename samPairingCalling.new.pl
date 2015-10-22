@@ -6,6 +6,9 @@ use warnings;
 use Data::Dumper;
 use Getopt::Std;
 
+use lib "/Share/home/zhangqf/cliff/lib/perllib";
+use Set::Scalar;
+
 use lib "module";
 #use PARISutil qw( &loadGTF &loadGenome &parseCigar &reverseComplement &localAlignment );
 use PARISutil qw( &loadGenome &parseCigar &reverseComplement &localAlignment );
@@ -98,12 +101,13 @@ sub main
         my @chiasticFiles = split ( /:/, $chiasticFileList );
         foreach my $chiasticFile ( @chiasticFiles ) { genPairClusterFromJunctionFile ( $chiasticFile, \%read, \%readmap, removeRedundancy => 1 ); }
     }
+    nonOverlappingTag ( \%read );
 
     my %duplexGroup = (); 
     genDuplexGroup ( \%duplexGroup, \%read );
-    nonOverlappingTag ( \%read );
-    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
-    printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, \%duplexGroup );
+
+    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
+    printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
 #    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
@@ -212,7 +216,7 @@ sub uniqSam
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            last if ( $lineCount > 20 );
+            last if ( $lineCount > 20000 );
             my @data = split ( /\t/, $line );
 
             if ( ( $data[9] ne $seq ) or ( $data[3] != $pos ) or ( $data[2] ne $seqName ) ) {
@@ -221,6 +225,7 @@ sub uniqSam
                 $seq = $data[9];
 
                 $global{readUniqCount}++;
+                $ref_read->{$global{readUniqCount}}{collapsedFrom} = 1;
                 $ref_read->{$global{readUniqCount}}{name} = $data[0];
 		$ref_readmap->{$data[0]} = $global{readUniqCount};
 
@@ -276,8 +281,8 @@ sub genPairClusterFromSamLine
     $ref_read->{$data[0]}{2}{end} = $pair2e;
 
     my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
-    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "2", $strand ) . "\n";
-    my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], ".", $strand ) . "\n";
+    $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "1", $strand ) . "\n";
+    my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], "1", $strand ) . "\n";
     
     return ( $stemBed, $intervalBed );
 
@@ -356,7 +361,7 @@ sub uniqJunction
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            last if ( $lineCount > 10 );
+            last if ( $lineCount > 1000 );
             my @data = split ( /\t/, $line );
             if ( ( $data[10] != $pos1 ) or ( $data[12] != $pos2 ) 
                     or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
@@ -368,6 +373,7 @@ sub uniqJunction
                 $cigar2 = $data[13]; $cigar1 = $data[11];
 
                 $global{readUniqCount}++;
+                $ref_read->{$global{readUniqCount}}{collapsedFrom} = 1;
                 $ref_read->{$global{readUniqCount}}{name} = $data[9];
 		$ref_readmap->{$data[9]} = $global{readUniqCount};
 
@@ -436,11 +442,11 @@ sub genPairClusterFromOneJunction
     $ref_read->{$data[9]}{2}{end} = $pair2e;
 
     my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
-    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "2", $data[5] ) . "\n";
+    $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "1", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
     if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { 
-        if ( $pair1s < $pair2s ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[9], ".", $data[2] ) . "\n"; }
-        else { $intervalBed = join ( "\t", $data[0], $pair2s, $pair1e, $data[9], ".", $data[2] ) . "\n"; }
+        if ( $pair1s < $pair2s ) { $intervalBed = join ( "\t", $data[0], $pair1s, $pair2e, $data[9], "1", $data[2] ) . "\n"; }
+        else { $intervalBed = join ( "\t", $data[0], $pair2s, $pair1e, $data[9], "1", $data[2] ) . "\n"; }
     }
 
     return ( $stemBed, $intervalBed );
@@ -459,6 +465,9 @@ sub genDuplexGroup
     my $preDuplexGroupFile = $duplexGroupBedFile . ".intersect.pre";
     my $duplexGroupFile = $duplexGroupBedFile . ".intersect";
     my $duplexCollapseFile = $duplexGroupBedFile . ".collapse";
+    my $duplexGroupBedCollapsedFile = $uniqDuplexGroupBedFile . ".collapsed";
+    my $duplexGroupBedCollapsedSortedFile = $uniqDuplexGroupBedFile . ".collapsed.sorted";
+    my $duplexGroupBedCollapsedUniqFile = $uniqDuplexGroupBedFile . ".collapsed.uniq";
     my $duplexConnectFile = $duplexGroupBedFile . ".connect";
     my $duplexCliqueFile = $duplexGroupBedFile . ".clique";
 
@@ -466,36 +475,184 @@ sub genDuplexGroup
     uniqBed ( $sortedDuplexGroupBedFile, $uniqDuplexGroupBedFile, sorted => 1);
 
     print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -r -f 0.80 > $preDuplexGroupFile`;
-    processIntersect ( $duplexGroupFile, $duplexCollapseFile, preProcess => 1 );
+    bedIntersect2duplexConnection ( $preDuplexGroupFile, $duplexCollapseFile, preProcess => 1 );
+    my ( $collapsedBegin, $collapsedEnd ) = readCollapse ( $ref_read, $duplexCollapseFile );
+    updateDuplexGroupUniq ( $uniqDuplexGroupBedFile, $duplexGroupBedCollapsedFile, $ref_read );
+    print STDERR `sort -k1,1 -k6,6 -k2,2n -k3,3n $duplexGroupBedCollapsedFile -o $duplexGroupBedCollapsedSortedFile`;
+    uniqBed ( $duplexGroupBedCollapsedSortedFile, $duplexGroupBedCollapsedUniqFile, sorted => 1);
 
-    print STDERR `bedtools intersect -a $uniqDuplexGroupBedFile -b $uniqDuplexGroupBedFile -wa -wb -s -r -f 0.50 > $duplexGroupFile`;
-    processIntersect ( $duplexGroupFile, $duplexConnectFile );
+    print STDERR `bedtools intersect -a $duplexGroupBedCollapsedUniqFile -b $duplexGroupBedCollapsedUniqFile -wa -wb -s -r -f 0.50 > $duplexGroupFile`;
+    bedIntersect2duplexConnection ( "$duplexGroupFile", $duplexConnectFile );
 
     ## generate proper tags for reads in $ref_read 
-    print STDERR `java -jar bin/maximalClique.jar -i $duplexConnectFile > $duplexCliqueFile`;
-    clique2DuplexGroup ( $ref_duplexGroup, $ref_read, $duplexCliqueFile, mode => "multiple" );
+    print STDERR `java -jar bin/encode.jar $duplexConnectFile`;
+    print STDERR `bin/mace Me -l 2 $duplexConnectFile.en $duplexConnectFile.en.cliques`;
+    print STDERR `java -jar bin/decode.jar $duplexConnectFile.map $duplexConnectFile.en.cliques`;
+    print STDERR `/bin/mv $duplexConnectFile.en.cliques.de $duplexCliqueFile`;
+
+    my $duplexGroupCount = clique2DuplexGroup ( $ref_duplexGroup, 0, $ref_read, $duplexCliqueFile, mode => "multiple" );
+    $duplexGroupCount = collapsed2DuplexGroup ( $ref_duplexGroup, $duplexGroupCount, $ref_read, $collapsedBegin, $collapsedEnd );
 }
 
+sub updateDuplexGroupUniq
+{
+    my $uniqDuplexGroupBedFile = shift;
+    my $duplexGroupBedCollapsedFile = shift;
+    my $ref_read = shift;
+
+    open ( UQ, $uniqDuplexGroupBedFile ) or die "Cannot open $uniqDuplexGroupBedFile for reading!\n";
+    open ( CL, ">$duplexGroupBedCollapsedFile" ) or die "Cannot open $duplexGroupBedCollapsedFile for writing!\n";
+    my %printed = ();
+    while ( my $line = <UQ> ) {
+	my @data = split ( /\t/, $line );
+	my @reads = split ( /;/, $data[3] );
+	my $remain = "";  my $collapsed = 0;
+	foreach my $read ( @reads ) {
+	    if ( defined $ref_read->{$read}{collapsedTo} ) { $collapsed = $ref_read->{$read}{collapsedTo} if ( not $collapsed ); }
+	    else { $remain .= ";" . $read; }
+	}
+	if ( $remain ) {
+	    $data[3] = substr ( $remain, 1 );
+	    print CL join ("\t", @data);
+	}
+	if ( ( $collapsed ) and ( not defined $printed{$collapsed} ) ) {
+	    print CL join ( "\t", $ref_read->{$collapsed}{1}{chr}, $ref_read->{$collapsed}{1}{start}, $ref_read->{$collapsed}{1}{end}, $collapsed, $ref_read->{$collapsed}{collapsedFrom}, $ref_read->{$collapsed}{1}{strand} ), "\n";
+	    print CL join ( "\t", $ref_read->{$collapsed}{2}{chr}, $ref_read->{$collapsed}{2}{start}, $ref_read->{$collapsed}{2}{end}, $collapsed, $ref_read->{$collapsed}{collapsedFrom}, $ref_read->{$collapsed}{2}{strand} ), "\n";
+	    $printed{$collapsed} = 1;
+	}
+    }
+    close CL;
+    close UQ;
+
+    1;
+}
+
+sub readCollapse
+{
+    my $ref_read = shift;
+    my $duplexCollapseFile = shift;
+    my %parameters = @_;
+
+    my @sets = ();
+    my $node1 = "";  my $node2 = "";
+    open ( CL, $duplexCollapseFile ) or die "Cannot open reads collapse $duplexCollapseFile file for reading!\n";
+    print "Now process reads collapse file\t", `date`;
+    my $lineCount = 0;
+    while ( my $line = <CL> ) {
+        $lineCount++;
+        if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
+
+	chomp $line;
+	( $node1, $node2 ) = split ( /\t/, $line );
+	my $existing1 = 0; my $existing2 = 0;
+	foreach my $set ( @sets ) {
+	    if ( $set->has($node1) ) {
+		$existing1 = $set;
+		last if ( $existing2 );
+	    }
+	    elsif ( $set->has($node2) ) {
+		$existing2 = $set;
+		last if ( $existing1 );
+	    }
+ 	}	
+	if ( $existing1 )  {
+	    if ( $existing2 ) {
+		if ( $existing1 ne $existing2 ) {
+		    $existing1->insert($existing2->members);
+		    $existing2->clear;
+		}
+	    }
+	    else { $existing1->insert($node2); }
+	}
+	elsif ( $existing2 ) { $existing2->insert($node1); }
+	else {
+	    my $set = Set::Scalar->new($node1, $node2);
+	    push @sets, $set;
+	}
+    }
+    close CL;
+
+    my $collapseMap = "tmp.$$.collapse.readmap.txt";
+    my $collapsedBegin = $global{readUniqCount};
+    my $firstCollapse = 1;
+    open ( MAP, ">$collapseMap" );
+    foreach my $set ( @sets ) {
+	next if ( $set->is_empty );
+	$global{readUniqCount}++;
+	if ( $firstCollapse ) { $collapsedBegin++; $firstCollapse = 0; }
+	print MAP $global{readUniqCount};
+	foreach my $id ( $set->members ) {
+	    print MAP "\t$id"; 
+	    $ref_read->{$id}{collapsedTo} = $global{readUniqCount};
+	    if ( not defined $ref_read->{$global{readUniqCount}} ) {
+	    	$ref_read->{$global{readUniqCount}}{collapsedFrom} = $ref_read->{$id}{collapsedFrom};
+	    	$ref_read->{$global{readUniqCount}}{name} = $ref_read->{$id}{name};
+	    	$ref_read->{$global{readUniqCount}}{1}{chr} = $ref_read->{$id}{1}{chr};
+	    	$ref_read->{$global{readUniqCount}}{1}{strand} = $ref_read->{$id}{1}{strand};
+	    	$ref_read->{$global{readUniqCount}}{1}{start} = $ref_read->{$id}{1}{start};
+	    	$ref_read->{$global{readUniqCount}}{1}{end} = $ref_read->{$id}{1}{end};
+	    	$ref_read->{$global{readUniqCount}}{2}{chr} = $ref_read->{$id}{2}{chr};
+	    	$ref_read->{$global{readUniqCount}}{2}{strand} = $ref_read->{$id}{2}{strand};
+	    	$ref_read->{$global{readUniqCount}}{2}{start} = $ref_read->{$id}{2}{start};
+	    	$ref_read->{$global{readUniqCount}}{2}{end} = $ref_read->{$id}{2}{end};
+	    }
+	    else {
+	    	$ref_read->{$global{readUniqCount}}{collapsedFrom} += $ref_read->{$id}{collapsedFrom};
+	    	$ref_read->{$global{readUniqCount}}{name} .= ";" . $ref_read->{$id}{name};
+	    	$ref_read->{$global{readUniqCount}}{1}{start} = $ref_read->{$id}{1}{start} if ( $ref_read->{$id}{1}{start} < $ref_read->{$global{readUniqCount}}{1}{start} );
+	    	$ref_read->{$global{readUniqCount}}{1}{end} = $ref_read->{$id}{1}{end} if ( $ref_read->{$id}{1}{end} > $ref_read->{$global{readUniqCount}}{1}{end} );
+	    	$ref_read->{$global{readUniqCount}}{2}{start} = $ref_read->{$id}{2}{start} if ( $ref_read->{$id}{2}{start} < $ref_read->{$global{readUniqCount}}{2}{start} );
+	    	$ref_read->{$global{readUniqCount}}{2}{end} = $ref_read->{$id}{2}{end} if ( $ref_read->{$id}{2}{end} > $ref_read->{$global{readUniqCount}}{2}{end} );
+	    }
+	}
+	print MAP "\n";
+    }
+    close MAP;
+
+    return ( $collapsedBegin, $global{readUniqCount} ) ;
+}
+
+sub collapsed2DuplexGroup
+{
+    my $ref_duplexGroup = shift;
+    my $cliqueIDBegin = shift;
+    my $ref_read = shift;
+    my $collapsedBegin = shift;
+    my $collapsedEnd = shift;
+    my %parameters = @_;
+
+    print "Now process collapsed nodes (nodes of multiple reads) that are not in cliques to generate duplex structures\t", `date`;
+    for ( my $idx = $collapsedBegin; $idx <= $collapsedEnd; $idx++ ) {
+	next if ( defined $ref_read->{$idx}{clique} );
+        $cliqueIDBegin++;
+	if ( defined $ref_read->{$idx}{clique} ) { $ref_read->{$idx}{clique} .= ";$cliqueIDBegin"; }
+	else { $ref_read->{$idx}{clique} = "$cliqueIDBegin"; }
+
+	updateClique ( $ref_duplexGroup, $cliqueIDBegin, $ref_read, $idx );
+    }
+    print "Finally $cliqueIDBegin cliques defined.\t", `date`;
+
+    return $cliqueIDBegin;
+}
 
 sub clique2DuplexGroup
 {
     my $ref_duplexGroup = shift;
+    my $cliqueID = shift;
     my $ref_read = shift;
     my $duplexCliqueFile = shift;
     my %parameters = @_;
 
-    my $cliqueID = 0;
     print "Now process reads cliques to generate alternative duplex structures\t", `date`;
     open ( CL, $duplexCliqueFile );
     if ( $parameters{mode} eq "multiple" ) {
         while ( my $line = <CL> ) {
             next if ( $line =~ /^#/ );
 
-            $cliqueID++;
             chomp $line;
-            #my ( $count, @data ) = split ( /\s/, $line );
-            my ( @data ) = split ( /\s/, $line );
-	    next if ( scalar ( @data ) < 3 );
+            my ( $count, @data ) = split ( /\t/, $line );
+	    next if ( $count < 2 );
+            $cliqueID++;
             foreach my $read ( @data ) {
                 next if ( not $read );
                 if ( defined $ref_read->{$read}{clique} ) { $ref_read->{$read}{clique} .= ";$cliqueID"; }
@@ -509,11 +666,10 @@ sub clique2DuplexGroup
         while ( my $line = <CL> ) {
             next if ( $line =~ /^#/ );
 
-            $cliqueID++;
             chomp $line;
-            #my ( $count, @data ) = split ( /\s/, $line );
-            my ( @data ) = split ( /\s/, $line );
-	    next if ( scalar ( @data ) < 3 );
+            my ( $count, @data ) = split ( /\t/, $line );
+	    next if ( $count < 2 );
+            $cliqueID++;
             foreach my $read ( @data ) {
                 next if ( not $read );
                 if ( not defined $ref_read->{$read}{clique} ) { $ref_read->{$read}{clique} = "$cliqueID"; } ## assume cliques are ranked from big to small
@@ -525,7 +681,7 @@ sub clique2DuplexGroup
     close CL;
     print "Finally $cliqueID cliques defined.\t", `date`;
 
-    1;
+    return $cliqueID;
 }
 
 sub updateClique
@@ -540,7 +696,7 @@ sub updateClique
         return 0;
     }
     if ( not defined $ref_clique->{$cliqueID} ) {
-        $ref_clique->{$cliqueID}{support} = 1;
+        $ref_clique->{$cliqueID}{support} = $ref_read->{$readID}{collapsedFrom};
         $ref_clique->{$cliqueID}{reads} = $readID;
         $ref_clique->{$cliqueID}{1}{chr} = $ref_read->{$readID}{1}{chr};
         $ref_clique->{$cliqueID}{1}{strand} = $ref_read->{$readID}{1}{strand};
@@ -552,7 +708,7 @@ sub updateClique
         $ref_clique->{$cliqueID}{2}{end} = $ref_read->{$readID}{2}{end};
     }
     else {
-        $ref_clique->{$cliqueID}{support}++;
+        $ref_clique->{$cliqueID}{support} += $ref_read->{$readID}{collapsedFrom};
         $ref_clique->{$cliqueID}{reads} .= ";$readID";
         if ( $ref_clique->{$cliqueID}{1}{chr} ne $ref_read->{$readID}{1}{chr} ) {
             print STDERR "Error! read not in different sequence as existing clique!\n"; 
@@ -584,6 +740,7 @@ sub printDuplexGroup
     my $outputFile = shift;
     my $ref_clique = shift;
     my $ref_read = shift;
+    my $ref_readmap = shift;
     my %parameters = @_;
 
     print "Output duplex groups to file $outputFile. \t", `date`;
@@ -600,13 +757,10 @@ sub printDuplexGroup
                             $ref_clique->{$a}{2}{end} cmp $ref_clique->{$b}{2}{end} } keys %{$ref_clique} ) {
            $duplexGroup++;
 	   if ( $ref_clique->{$dg}{support} < $parameters{minSupport} ) {
-		$ref_clique->{$dg}{valid} = 0;
 		next;
 	   }
-
-	   $ref_clique->{$dg}{valid} = 1;
            my @reads = split ( /;/, $ref_clique->{$dg}{reads} );
-           print OUT "Group $duplexGroup == position "; 
+           print OUT "Group $dg == position "; 
            print OUT $ref_clique->{$dg}{1}{chr}, "(", $ref_clique->{$dg}{1}{strand}, "):";
            print OUT $ref_clique->{$dg}{1}{start}, "-", $ref_clique->{$dg}{1}{end};
            print OUT "|", $ref_clique->{$dg}{2}{chr}, "(", $ref_clique->{$dg}{2}{strand}, "):";
@@ -614,15 +768,24 @@ sub printDuplexGroup
            print OUT ", support ", $ref_clique->{$dg}{support}, "\n";
 
            for ( my $idx = 0; $idx < scalar ( @reads ); $idx++ ) {
-               print OUT "  ", $ref_read->{$reads[$idx]}{name};
-               print OUT "\n";
+		if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
+		    print OUT "  ", $ref_read->{$reads[$idx]}{name}, "\n"; 
+		    $ref_readmap->{$ref_read->{$reads[$idx]}{name}} = 0 - $ref_readmap->{$ref_read->{$reads[$idx]}{name}} if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 );
+		}
+		else {
+		    my @names = split ( /;/, $ref_read->{$reads[$idx]}{name} );
+		    foreach my $name ( @names ) { 
+			print OUT "  ", $name, "\n"; 
+			$ref_readmap->{$name} = 0 - $ref_readmap->{$name} if ( $ref_readmap->{$name} > 0 );
+		    }
+		}
            }
    }
    close OUT;
 
    print "$duplexGroup clusteres output to file $outputFile.\n\tTime: ", `date`, "\n";
 
-   1;
+    1;
 }
 
 sub printSupportSam
@@ -631,7 +794,6 @@ sub printSupportSam
     my $allSupportSam = shift;
     my $ref_read = shift;
     my $ref_readmap = shift;
-    my $ref_clique = shift;
     my %parameters = @_;
 
     print "Output supportting alignments to SAM file $outputFile. \t", `date`;
@@ -650,24 +812,18 @@ sub printSupportSam
                 if ( $lineCount % 1000000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
 
                 my @data = split ( /\t/, $line );
-		next if ( not defined $ref_readmap->{$data[0]} );
+		next if ( ( not defined $ref_readmap->{$data[0]} ) or ( $ref_readmap->{$data[0]} > 0 ) );
+		my $readID = 0 - $ref_readmap->{$data[0]};
 
-		my $readID = $ref_readmap->{$data[0]};
-		next if ( not defined $ref_read->{$readID}{clique} );
-
-		my $valid = 0;
-		my @cliques = split ( /;/, $ref_read->{$readID}{clique} );
-		foreach my $clique ( @cliques ) {
-		    if ( $ref_clique->{$clique}{valid} ) {
-			$valid = 1;
-			last;
-		    }
-		}
-		next if ( not $valid );
-
-		$validCount++; 
 		chomp $line;
-		print OUT $line, "\tDG:i:$ref_read->{$readID}{clique}\tNG:i:$ref_read->{$readID}{ngTag}\n";
+		if ( defined $ref_read->{$readID}{clique} ) {
+		    print OUT $line, "\tDG:i:$ref_read->{$readID}{clique}\tNG:i:$ref_read->{$readID}{ngTag}\n";
+		}
+		else {
+		    my $readIDcollpasedTo = $ref_read->{$readID}{collapsedTo};
+		    print OUT $line, "\tDG:i:$ref_read->{$readIDcollpasedTo}{clique}\tNG:i:$ref_read->{$readID}{ngTag}\n";
+		}
+		$validCount++; 
             }
         }
         close SAM;
@@ -683,7 +839,7 @@ sub printSupportSam
     1;
 }
 
-sub processIntersect
+sub bedIntersect2duplexConnection
 {
     my $duplexGroupFile = shift;
     my $duplexConnectFile = shift;
@@ -697,12 +853,6 @@ sub processIntersect
     print "  Open intersect file $duplexGroupFile for reading\n";
     my $tmpConnect = "tmp.$$.connect";
     my $lineCount = 0;
-
-    for ( my $idx = 0; $idx < 100; $idx++ ) {
-        my $tag = sprintf ( "%02s", $idx );
-        my $file = "$tmpConnect.$tag";
-	print STDERR '/bin/rm -f $file' if ( -e $file );
-    }
 
     my %content = ();
     while ( my $line = <IN> ) {
@@ -752,27 +902,29 @@ sub processIntersect
             else {
                 if ( $lastLine ) {
                     chomp $lastLine;
-		    if ( defined $parameters{preProcess} ) {
-		    }
-		    else {
-               		print TCC $lastLine, "\n" if ( $connectCount == 2 );
-                        print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
-		    }
+		    print TCC $lastLine, "\n" if ( $connectCount == 2 );
+		    print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
                 }
                 $lastLine = $line;
                 $connectCount = 1;
             }
         }
         chomp $lastLine;
-	if ( defined $parameters{preProcess} ) {
-	}
-	else {
-            print TCC $lastLine, "\n" if ( $connectCount == 2 );
-            print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
-	}
+	print TCC $lastLine, "\n" if ( $connectCount == 2 );
+	print STDERR "Error! not expecting edge degree more than 2: $lastLine\t", $connectCount, "\n" if ( $connectCount > 2 );
         close IN;
         close TCC;
     }
+
+    for ( my $idx = 0; $idx < 100; $idx++ ) {
+        my $tag = sprintf ( "%02s", $idx );
+        my $file = "tmp.$$.connect.$tag";
+        my $fileSorted = "tmp.$$.connect.sorted.$tag";
+	print STDERR `/bin/rm -f $file` if ( -e $file );
+	print STDERR `/bin/rm -f $fileSorted` if ( -e $fileSorted );
+    }
+
+    1;
 }
 
 sub nonOverlappingTag 
@@ -827,7 +979,7 @@ sub uniqBed
     my $uniqBed = shift;
     my %parameters = @_;
 
-    my $bedPos = "";  my $tag = "";  my $bedStrand = "";  my $label = "";  my $count = 0;
+    my $bedPos = "";  my $tag = "";  my $bedStrand = "";  my $count = 0;
     open ( IN, $inputBed ) or die "Cannot open $inputBed for reading!\n";
     open ( OUT, ">$uniqBed" ) or die "Cannot open $uniqBed for writing!\n";
     if ( $parameters{sorted} ) {
@@ -840,10 +992,9 @@ sub uniqBed
                 $bedPos = $tmpPos;
                 $bedStrand = $data[5];
                 $tag = $data[3];
-                $label = $data[4];
-                $count = 1;
+                $count = $data[4];
             }
-            else { $tag .= ";" . $data[3]; $count++;  }
+            else { $tag .= ";" . $data[3]; $count += $data[4];  }
         }
         if ( $bedPos ) { print OUT join ( "\t", $bedPos, $tag, $count, $bedStrand ), "\n"; }
     }
