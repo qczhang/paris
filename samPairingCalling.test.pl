@@ -148,16 +148,19 @@ sub genPairClusterFromSamFile
     my %parameters = @_;
 
     my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
-
+    my $sortedSamFile = "tmp.$$.sorted.sam";
+    my $uniqSamFile = "tmp.$$.uniq.sam";
+    print STDERR `grep "^@" $samFile > $sortedSamFile`;
+    print STDERR `grep -v "^@" $samFile | sort -k3,3 -k4,4n -k10,10 >> $sortedSamFile`;
     if ( $parameters{removeRedundancy} ) {
-        print STDERR "Remove redundancy in input SAM file $samFile.\t", `date`;
-        my $sortedSamFile = "tmp.$$.sorted.sam";
-        my $uniqSamFile = "tmp.$$.uniq.sam";
-        print STDERR `grep "^@" $samFile > $sortedSamFile`;
-        print STDERR `grep -v "^@" $samFile | sort -k3,3 -k4,4n -k10,10 >> $sortedSamFile`;
+        print STDERR "Remove redundancy and encode input SAM file $samFile.\t", `date`;
         uniqSam ( $sortedSamFile, $uniqSamFile, $ref_read, $ref_readmap );
-        $samFile = $uniqSamFile;
     }
+    else {
+        print STDERR "Encode input SAM file $samFile.\t", `date`;
+        encodeSam ( $sortedSamFile, $uniqSamFile, $ref_read, $ref_readmap );
+    }
+    $samFile = $uniqSamFile;
 
     my $lineCount = 0; my $validCount = 0;
     open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
@@ -184,6 +187,48 @@ sub genPairClusterFromSamFile
 
     return ( $lineCount, $validCount );
 }
+
+sub encodeSam 
+{
+    my $samFile = shift;
+    my $uniqSamFile = shift;
+    my $ref_read = shift;
+    my $ref_readmap = shift;
+
+    my $readMap = "tmp.$$.readmap.txt";
+    my %reads = ();
+    open ( SAM, $samFile ) or die ( "Error in reading sam file $samFile!\n" );
+    open ( OUT, ">$uniqSamFile" ) or die ( "Error in opening $uniqSamFile for output uniq SAM!\n" );
+    open ( MAP, ">>$readMap" ) or die ( "Error in opening $readMap for output read id mapping!\n" );
+    print "read sam file $samFile...\n\tTime: ", `date`;
+    my $lineCount = 0;
+    while ( my $line = <SAM> ) {
+        next if ( $line =~ /^#/ );
+        if ( $line =~ /^@/ ) { print OUT $line; }
+        else {
+            $lineCount++; if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
+            #last if ( $lineCount > 20000 );
+
+            my @data = split ( /\t/, $line );
+            $global{readUniqCount}++;
+            $ref_read->{$global{readUniqCount}}{count} = 1;
+            $ref_read->{$global{readUniqCount}}{collapsedFrom} = $global{readUniqCount};
+            $ref_read->{$global{readUniqCount}}{collapsedTo} = $global{readUniqCount};
+            $ref_read->{$global{readUniqCount}}{name} = $data[0];
+            $ref_readmap->{$data[0]} = $global{readUniqCount};
+
+            print MAP $data[0], "\t", $global{readUniqCount}, "\n";
+            $data[0] = $global{readUniqCount};
+            print OUT join ( "\t", @data );
+        }
+    }
+    close SAM; close MAP; close OUT; close OUT;
+
+    print "$lineCount lines read from sam file $samFile.\n\tTime: ", `date`, "\n";
+
+    1;
+}
+
 
 sub uniqSam 
 {
@@ -283,15 +328,18 @@ sub genPairClusterFromJunctionFile
     my %parameters = @_;
 
     my $duplexGroupBed = "tmp.$$.duplexGroup.bed";
-
+    my $sortedJunctionFile = "tmp.$$.sorted.junction";
+    my $uniqJunctionFile = "tmp.$$.uniq.junction";
+    print STDERR `sort -k1,1 -k4,4 -k3,3 -k6,6 -k11,11n -k13,13n -k12,12 -k14,14 $junctionFile > $sortedJunctionFile`;
     if ( $parameters{removeRedundancy} ) {
-        print STDERR "Remove redundancy in input Junction file $junctionFile.\t", `date`;
-        my $sortedJunctionFile = "tmp.$$.sorted.junction";
-        my $uniqJunctionFile = "tmp.$$.uniq.junction";
-        print STDERR `sort -k1,1 -k4,4 -k3,3 -k6,6 -k11,11n -k13,13n -k12,12 -k14,14 $junctionFile > $sortedJunctionFile`;
+        print STDERR "Remove redundancy and encode input Junction file $junctionFile.\t", `date`;
         uniqJunction ( $sortedJunctionFile, $uniqJunctionFile, $ref_read, $ref_readmap );
-        $junctionFile = $uniqJunctionFile;
     }
+    else {
+        print STDERR "Encode input Junction file $junctionFile.\t", `date`;
+        encodeJunction ( $sortedJunctionFile, $uniqJunctionFile, $ref_read, $ref_readmap );
+    }
+    $junctionFile = $uniqJunctionFile;
 
     my $lineCount = 0;
     my $validCount = 0;
@@ -318,6 +366,48 @@ sub genPairClusterFromJunctionFile
     print "among which $validCount lines generate supports for base pairing.\n\tTime: ", `date`, "\n";
 
     return $lineCount;
+}
+
+sub encodeJunction 
+{
+    my $junctionFile = shift;
+    my $uniqJunctionFile = shift;
+    my $ref_read = shift;
+    my $ref_readmap = shift;
+
+    my $readMap = "tmp.$$.readmap.txt";
+    my %reads = ();
+    open ( JUNC, $junctionFile ) or die ( "Error in reading junction file $junctionFile!\n" );
+    open ( MAP, ">>$readMap" ) or die ( "Error in opening $readMap for output read id mapping!\n" );
+    open ( OUT, ">$uniqJunctionFile" ) or die ( "Error in opening $uniqJunctionFile for output uniq junction file!\n" );
+    print "read junction file $junctionFile...\n\tTime: ", `date`;
+    my $lineCount = 0;
+    while ( my $line = <JUNC> ) {
+        next if ( $line =~ /^#/ );
+        if ( $line =~ /^@/ ) { print OUT $line; }
+        else {
+            $lineCount++;
+            if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
+            #last if ( $lineCount > 1000 );
+
+            my @data = split ( /\t/, $line );
+            $global{readUniqCount}++;
+            $ref_read->{$global{readUniqCount}}{count} = 1;
+            $ref_read->{$global{readUniqCount}}{collapsedFrom} = $global{readUniqCount};
+            $ref_read->{$global{readUniqCount}}{collapsedTo} = $global{readUniqCount};
+            $ref_read->{$global{readUniqCount}}{name} = $data[9];
+            $ref_readmap->{$data[9]} = $global{readUniqCount};
+
+            print MAP $data[9], "\t", $global{readUniqCount}, "\n";
+            $data[9] = $global{readUniqCount};
+            print OUT join ( "\t", @data );
+        }
+    }
+    close JUNC; close MAP; close OUT;
+
+    print "$lineCount lines read from junction file $junctionFile.\n\tTime: ", `date`, "\n";
+
+    1;
 }
 
 sub uniqJunction 
@@ -370,9 +460,7 @@ sub uniqJunction
             }
         }
     }
-    close JUNC;
-    close MAP;
-    close OUT;
+    close JUNC; close MAP; close OUT;
 
     print "$lineCount lines read from junction file $sortedJunctionFile.\n";
     print "among which $global{readUniqCount} lines are unique.\n\tTime: ", `date`, "\n";
