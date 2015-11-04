@@ -1213,7 +1213,7 @@ sub printSupportSam
                     my @data = split ( /\t/, $line );
                     if ( $isChiastic == 0 ) { next if ( $data[1] & 256 ); }
                     else {
-                        next if ( ( $isChiastic == 1 ) and ( $data[1] & 0 ) );
+                        next if ( ( $isChiastic == 1 ) and ( not ( $data[1] & 256 ) ) );
                         $data[9] = reverseRead ( $data[5], $data[9] );
                         $data[10] = reverseRead ( $data[5], $data[10] );
                     } 
