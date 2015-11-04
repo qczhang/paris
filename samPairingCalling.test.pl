@@ -1209,15 +1209,15 @@ sub printSupportSam
                 chomp $line;
                 my $realReadID = ( defined $ref_read->{$readID}{clique} ) ? $ref_read->{$readID}{collapsedTo} : $readID;
                 if ( defined $ref_read->{$realReadID}{cigar} ) { 
-                    next if ( $data[1] & 256 );
                     my ( $isChiastic, $cigar ) = split ( /:/, $ref_read->{$realReadID}{cigar} );
-
                     my @data = split ( /\t/, $line );
-                    $data[5] = $cigar;
-                    if ( $isChiastic ) {
+                    if ( $isChiastic == 0 ) { next if ( $data[1] & 256 ); }
+                    else {
+                        next if ( ( $isChiastic == 1 ) and ( $data[1] & 0 ) );
                         $data[9] = reverseRead ( $data[5], $data[9] );
                         $data[10] = reverseRead ( $data[5], $data[10] );
-                    }
+                    } 
+                    $data[5] = $cigar;
                     print OUT join ( "\t", @data, "\tXG:i:$isChiastic" );
                 }
                 else { print OUT $line; }
