@@ -43,14 +43,16 @@ use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt
 
 my $usage = <<_EOH_;
 ## --------------------------------------
- call base pair groups from PARIS sequencing
+ Call base pair groups from PARIS sequencing
  Command:
   $0 -i input_sam_file -j chiastic_junction_file -s chiastic_support_sam_file -o output_read_group
+
  # what it is:
   -i     input sam file of spliced alignment
   -j     chiastic junction file
   -s	 chiastic junction support alignment file
   -o	 output base pair groups
+
  # more options:
   -g     genome file
   -z	 genome size file
@@ -59,10 +61,11 @@ my $usage = <<_EOH_;
 
   -l	minimum overhang length for valid mapping (default: 15)
   -p	minimum number of supporting reads (default: 2)
-  -v    minimum number of overlap nucleotides to define a read duplex
+  -v    minimum number of overlap nucleotides to define a read duplex (default: 5)
   -c 	scoring method (harmonic or geometric. Default: harmonic)
 
   -r    remove redundancy in input sam or junctions (default: no)
+  -n    generate a NG tag for IGV visualization in the output sam file of support reads (default: no)
 _EOH_
 ;
 
@@ -99,7 +102,7 @@ sub main
     my %duplexGroup = (); 
     genDuplexGroup ( \%duplexGroup, \%read, minOverlap => $parameters{minOverlap} );
     printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
-    nonOverlappingTag ( \%read );
+    if ( $parameters{genNGtag} )   {  nonOverlappingTag ( \%read );  }
     printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => 1 );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
@@ -479,7 +482,7 @@ sub genPairClusterFromOneJunction
     my $cigar = "";  my $isChiastic = 0;
     if ( ( $data[0] ne $data[3] ) or ( $data[2] ne $data[5] ) ) {
         $isChiastic = 2;
-        $cigar = $data[11] . "|" . $data[13];
+        $cigar = $data[11] . ":" . $data[13];
     }
     else {
         if ( $data[2] eq "+" )  {
@@ -505,6 +508,7 @@ sub genPairClusterFromOneJunction
         return 0;
     }
 
+    $ref_read->{$data[9]}{cigar} = $isChiastic . ":" . $cigar;
     $ref_read->{$data[9]}{1}{chr} = $data[0];
     $ref_read->{$data[9]}{1}{strand} = $data[2];
     $ref_read->{$data[9]}{2}{chr} = $data[3];
@@ -1193,22 +1197,35 @@ sub printSupportSam
             next if ( $line =~ /^#/ );
             if ( $line =~ /^@/ ) { print OUT $line if ( $firstSam ); }
             else {
-                $firstSam = 0;
                 $lineCount++;
                 if ( $lineCount % 1000000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
+
+                $firstSam = 0;
 
                 my @data = split ( /\t/, $line );
                 next if ( ( not defined $ref_readmap->{$data[0]} ) or ( $ref_readmap->{$data[0]} > 0 ) );
                 my $readID = 0 - $ref_readmap->{$data[0]};
 
                 chomp $line;
-                if ( defined $ref_read->{$readID}{clique} ) {
-                    print OUT $line, "\tDG:i:$ref_read->{$readID}{clique}\tNG:i:$ref_read->{$readID}{ngTag}\n";
+                my $realReadID = ( defined $ref_read->{$readID}{clique} ) ? $ref_read->{$readID}{collapsedTo} : $readID;
+                if ( defined $ref_read->{$realReadID}{cigar} ) { 
+                    next if ( $data[1] & 256 );
+                    my ( $isChiastic, $cigar ) = split ( /:/, $ref_read->{$realReadID}{cigar} );
+
+                    my @data = split ( /\t/, $line );
+                    $data[5] = $cigar;
+                    if ( $isChiastic ) {
+                        $data[9] = reverseRead ( $data[5], $data[9] );
+                        $data[10] = reverseRead ( $data[5], $data[10] );
+                    }
+                    print OUT join ( "\t", @data, "\tXG:i:$isChiastic" );
                 }
-                else {
-                    my $readIDcollpasedTo = $ref_read->{$readID}{collapsedTo};
-                    print OUT $line, "\tDG:i:$ref_read->{$readIDcollpasedTo}{clique}\tNG:i:$ref_read->{$readID}{ngTag}\n";
-                }
+                else { print OUT $line; }
+
+                print OUT "\tDG:i:$ref_read->{$realReadID}{clique}";
+                if ( defined $ref_read->{$readID}{ngTag} ) { print OUT "\tNG:i:$ref_read->{$readID}{ngTag}"; }
+                print OUT "\n";
+
                 $validCount++; 
             }
         }
