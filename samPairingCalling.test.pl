@@ -1214,6 +1214,7 @@ sub printSupportSam
                     if ( $isChiastic == 0 ) { next if ( $data[1] & 256 ); }
                     else {
                         next if ( ( $isChiastic == 1 ) and ( not ( $data[1] & 256 ) ) );
+                        $data[1] = ( $data[1] & 3839 );
                         $data[9] = reverseRead ( $data[5], $data[9] );
                         $data[10] = reverseRead ( $data[5], $data[10] );
                     } 
