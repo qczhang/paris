@@ -17,6 +17,8 @@ my $_debug = 0;
 my %environment = (
     maxChr            => 999999999999,
     intronFlanking    => 3,
+    maxGap 	      => 10,
+    maxTotal 	      => 30
 );
 
 my %global = (
@@ -101,7 +103,7 @@ sub main
 
     my %duplexGroup = (); 
     genDuplexGroup ( \%duplexGroup, \%read, minOverlap => $parameters{minOverlap} );
-    collapseDuplexGroup ( \%duplexGroup, \%read );
+    collapseDuplexGroup ( \%duplexGroup, \%read, maxGap => $environment{maxGap}, maxTotal => $environment{maxTotal} );
     finalizeDuplexGroup ( \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
 
     printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, minSupport => $parameters{minSupport} );
