@@ -101,8 +101,10 @@ sub main
 
     my %duplexGroup = (); 
     genDuplexGroup ( \%duplexGroup, \%read, minOverlap => $parameters{minOverlap} );
-    collapseDuplexGroup ( \%duplexGroup, \%read, minOverlap => 0.5 );
-    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
+    collapseDuplexGroup ( \%duplexGroup, \%read );
+    finalizeDuplexGroup ( \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
+
+    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, minSupport => $parameters{minSupport} );
     if ( $parameters{genNGtag} )   {  nonOverlappingTag ( \%read );  }
     printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => 1 );
 
@@ -177,7 +179,7 @@ sub genPairClusterFromSamFile
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
 
-            #last if ( $lineCount > 10 );
+            #last if ( $lineCount > 1000 );
             my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
             if ( $duplexStemLine ) {
                 print DG $duplexStemLine;
@@ -315,7 +317,7 @@ sub genPairClusterFromSamLine
     $ref_read->{$data[0]}{2}{start} = $pair2s;
     $ref_read->{$data[0]}{2}{end} = $pair2e;
 
-    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\n";
+    my $stemBed = join ( "\t", $data[2], $pair1s, $pair1e, $data[0], "1", $strand ) . "\t";
     $stemBed .= join ( "\t", $data[2], $pair2s, $pair2e, $data[0], "1", $strand ) . "\n";
     my $intervalBed = join ( "\t", $data[2], $pair1s, $pair2e, $data[0], "1", $strand ) . "\n";
 
@@ -358,7 +360,7 @@ sub genPairClusterFromJunctionFile
             print "\tvalid line: $validCount\n\t", `date`;
         }
 
-        #last if ( $lineCount > 10000 );
+        #last if ( $lineCount > 100 );
         my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
         if ( $duplexStemLine ) {
             print DG $duplexStemLine;
@@ -536,7 +538,7 @@ sub genPairClusterFromOneJunction
         $ref_read->{$data[9]}{2}{end} = $pair2e;
     }
 
-    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\n";
+    my $stemBed = join ( "\t", $data[0], $pair1s, $pair1e, $data[9], "1", $data[2] ) . "\t";
     $stemBed .= join ( "\t", $data[3], $pair2s, $pair2e, $data[9], "1", $data[5] ) . "\n";
     my $intervalBed = $stemBed;
     if ( ( $data[0] eq $data[3] ) and ( $data[2] eq $data[5] ) ) { 
@@ -555,36 +557,43 @@ sub collapseDuplexGroup
     my $ref_read = shift;
     my %parameters = @_;
 
-    my $minOverlap = ( defined $parameters{minOverlap} ) ? $parameters{minOverlap} : 0.5;
+    my $minOverlap = ( defined $parameters{minOverlap} ) ? $parameters{minOverlap} : 0.01;
+    my $maxGap = ( defined $parameters{maxGap} ) ? $parameters{maxGap} : 10;
+    my $maxTotal = ( defined $parameters{maxTotal} ) ? $parameters{maxTotal} : 30;
     my $dgCount = 0;
     my $firstPossible = 0;
+    my @dgArray = ();
     foreach my $dg ( sort { $ref_duplexGroup->{$a}{chr1} cmp $ref_duplexGroup->{$b}{chr1} or 
         $ref_duplexGroup->{$a}{strand1} cmp $ref_duplexGroup->{$b}{strand1} or
-        $ref_duplexGroup->{$a}{start1} <=> $ref_duplexGroup->{$b}{start1} or
-        $ref_duplexGroup->{$a}{end1} <=> $ref_duplexGroup->{$b}{end1} or
         $ref_duplexGroup->{$a}{chr2} cmp $ref_duplexGroup->{$b}{chr2} or
         $ref_duplexGroup->{$a}{strand2} cmp $ref_duplexGroup->{$b}{strand2} or
+        $ref_duplexGroup->{$a}{start1} <=> $ref_duplexGroup->{$b}{start1} or
+        $ref_duplexGroup->{$a}{end1} <=> $ref_duplexGroup->{$b}{end1} or
         $ref_duplexGroup->{$a}{start2} <=> $ref_duplexGroup->{$b}{start2} or
         $ref_duplexGroup->{$a}{end2} <=> $ref_duplexGroup->{$b}{end2} } keys %{$ref_duplexGroup} ) {
-        $dgCount++; if ( $dgCount % 1000 == 0 ) { print "duplex group: $dgCount\n\t", `date`; }
 
-        my $lastDGoverlapped = 0;
+	push @dgArray, $dg;
+	my $lastDGoverlapped = 0;
         for ( my $idx = $firstPossible; $idx < $dgCount; $idx++ ) {
-            my $overlapped = checkOverlap ( $ref_duplexGroup->{$idx}, $ref_duplexGroup->{$dg}{chr1}, $ref_duplexGroup->{$dg}{strand1}, $ref_duplexGroup->{$dg}{start1}, $ref_duplexGroup->{$dg}{end1}, $ref_duplexGroup->{$dg}{chr2}, $ref_duplexGroup->{$dg}{strand2}, $ref_duplexGroup->{$dg}{start2}, $ref_duplexGroup->{$dg}{end2}, $ref_read, $ref_duplexGroup->{$dg}{reads}, $minOverlap );
-
-            if ( $overlapped >= $minOverlap ) {
-                $lastDGoverlapped = 1;
-                updateDuplexGroup ( $ref_duplexGroup->{$idx}, $ref_duplexGroup->{$dg}{reads}, $ref_duplexGroup->{$dg}{start1}, $ref_duplexGroup->{$dg}{end1}, $ref_duplexGroup->{$dg}{start2}, $ref_duplexGroup->{$dg}{end2}  );
-                $ref_duplexGroup->{$dg}{collapsedTo} = $idx;
-            }
-            elsif ( $overlapped == -1 ) {    ## the start of this read is beyond the firstPossible duplex, so no need to check firstPossible in the future
+            my $overlapped = checkOverlapDG ( $ref_duplexGroup->{$dgArray[$idx]}, $ref_duplexGroup->{$dg}, reads => $ref_read, maxGap => $maxGap, maxTotal => $maxTotal );
+            if ( $overlapped == -1 ) {
                 if ( not $lastDGoverlapped ) {
-                    $firstPossible++;
+                    #$firstPossible++;
+                    $firstPossible = $idx + 1;
                 }
+	    }
+            elsif ( $overlapped > 0 ) {
+                $lastDGoverlapped = 1;
+                mergeDuplexGroup ( $ref_duplexGroup->{$dgArray[$idx]}, $ref_duplexGroup->{$dg} );
+                $ref_duplexGroup->{$dg}{collapsedTo} = $dgArray[$idx];
+		last;
             }
             else {
+                $lastDGoverlapped = 1;
             }
         }
+
+        $dgCount++; if ( $dgCount % 1000 == 0 ) { print "duplex group: $dgCount\n\t", `date`; }
     }
     close BED;
 
@@ -600,37 +609,36 @@ sub genDuplexGroup
     my $minOverlap = ( defined $parameters{minOverlap} ) ? $parameters{minOverlap} : 1;
     my $duplexCount = ( defined $parameters{duplexCount} ) ? $parameters{duplexCount} : 0;
     my $duplexGroupBedFile = ( defined $parameters{duplexGroupBedFile} ) ? $parameters{duplexGroupBedFile} : "tmp.$$.duplexGroup.bed";
-    my $lineCount = 0;
-    my $firstPossible = 0;
-    open ( BED, $duplexGroupBedFile );
+    my $duplexGroupBedFileSorted = $duplexGroupBedFile . ".sorted";
+    print STDERR `sort -k1,1 -k6,6 -k7,7 -k12,12 -k2,2n -k3,3n -k8,8n -k9,9n $duplexGroupBedFile -o $duplexGroupBedFileSorted`;
+    my $lineCount = 0; my $firstPossible = 0;
+    open ( BED, $duplexGroupBedFileSorted);
+    print "Now generate duplex group from file $duplexGroupBedFileSorted\n\t", `date`;
     while ( my $line = <BED> ) {
-        next if ( $line =~ /^#/ );
-
-        $lineCount++;
-        if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\n\t", `date`; }
-        chomp $line;
-        my ( $chr1, $start1, $end1, $id1, $score1, $strand1 ) = split ( /\t/, $line );
-        $line = <BED>; chomp $line;
-        my ( $chr2, $start2, $end2, $id2, $score2, $strand2 ) = split ( /\t/, $line );
+        next if ( $line =~ /^#/ ); chomp $line;
+        $lineCount++; if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\n\t", `date`; }
+        my ( $chr1, $start1, $end1, $id1, $score1, $strand1, $chr2, $start2, $end2, $id2, $score2, $strand2 ) = split ( /\t/, $line );
 
         my $lastDGoverlapped = 0;
         my $nonOverlapped = 1;
         for ( my $idx = $firstPossible; $idx < $duplexCount; $idx++ ) {
-            my $overlapped = checkOverlap ( $ref_duplexGroup->{$idx}, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2 );
+            my $overlapped = checkOverlap ( $ref_duplexGroup->{$idx}, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, 0 );
 
             if ( $overlapped >= $minOverlap ) {
                 $nonOverlapped = 0;
                 $lastDGoverlapped = 1;
-                updateDuplexGroup ( $ref_duplexGroup->{$idx}, $id1, $start1, $end1,$start2, $end2 );
+                addRead2DuplexGroup ( $ref_duplexGroup->{$idx}, $id1, $start1, $end1,$start2, $end2 );
                 if ( not defined $ref_read->{$id1}{clique} ) { $ref_read->{$id1}{clique} = $idx; }
                 else { $ref_read->{$id1}{clique} .= ";" . $idx; }
             }
             elsif ( $overlapped == -1 ) {    ## the start of this read is beyond the firstPossible duplex, so no need to check firstPossible in the future
                 if ( not $lastDGoverlapped ) {
-                    $firstPossible++;
+                    #$firstPossible++;
+                    $firstPossible = $idx + 1;
                 }
             }
             else {
+                $lastDGoverlapped = 1;
             }
         }
         if ( $nonOverlapped ) {
@@ -641,11 +649,13 @@ sub genDuplexGroup
     }
     close BED;
 
+    print "Finally $duplexCount duplex group generated from file $duplexGroupBedFile\n\t", `date`;
     return $duplexCount;
 }
 
 sub checkOverlap 
 {
+    #( $ref_duplexGroup->{$idx}, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, 0 );
     my $ref_dgItem = shift;
     my @data = @_;
 
@@ -653,31 +663,57 @@ sub checkOverlap
     if ( ( $ref_dgItem->{end1} < $data[2] ) or ( $ref_dgItem->{chr1} ne $data[0]) or ( $ref_dgItem->{strand1} ne $data[1]) ) { $overlap = -1; }
     elsif ( ( $ref_dgItem->{start1} < $data[3] ) and ( $ref_dgItem->{chr2} eq $data[4]) and ( $ref_dgItem->{strand2} eq $data[5]) and ( $ref_dgItem->{start2} < $data[7] ) and ( $data[6] < $ref_dgItem->{end2} ) ) { 
         #$overlap = min4 ( $ref_dgItem->{end1} - $data[2], $data[3] - $ref_dgItem->{start1}, $ref_dgItem->{end2} - $data[6], $data[7] - $ref_dgItem->{start2} ); 
-        $overlap = ( $ref_dgItem->{end1} - $data[2] > $data[3] - $ref_dgItem->{start1} ) ? $data[3] - $ref_dgItem->{start1} : $ref_dgItem->{end1} - $data[2]; 
-        $overlap = $ref_dgItem->{end2} - $data[6] if ( $overlap > $ref_dgItem->{end2} - $data[6] );
-        $overlap = $data[7] - $ref_dgItem->{start2} if ( $overlap > $data[7] - $ref_dgItem->{start2} );
+	my $overlap1 = ( ( $ref_dgItem->{end1} > $data[3] ) ? $data[3] : $ref_dgItem->{end1} ) - ( ( $ref_dgItem->{start1} > $data[2] ) ? $ref_dgItem->{start1} : $data[2] );
+	my $overlap2 = ( ( $ref_dgItem->{end2} > $data[7] ) ? $data[7] : $ref_dgItem->{end2} ) - ( ( $ref_dgItem->{start2} > $data[6] ) ? $ref_dgItem->{start2} : $data[6] );
+
+        $overlap = ( $overlap1 > $overlap2 ) ? $overlap2 : $overlap1;
     }
-    if ( $overlap > 0 ) {
-        if ( defined $data[8] ) {
-            my @read1s = split ( /;/, $ref_dgItem->{reads} );
-            my @read2s = split ( /;/, $data[9] );
-            my $minOverlap1 = scalar ( @read1s ) * $data[10];
-            my $minOverlap2 = scalar ( @read2s ) * $data[10];
-            my $overlapCount1 = 0;
-            foreach my $r1 ( @read1s ) {
-                my $overlapCount2 = 0;
-                foreach my $r2 ( @read2s ) {
-                    $overlapCount2 += readsOverlap ( $data[8], $r1, $r2 );
-                    if ( $overlapCount2 > $minOverlap2 ) {
-                        $overlapCount1++;
-                        last;
-                    }
-                }
-                if ( $overlapCount1 > $minOverlap1 ) {
-                    return 1;
-                }
-            }
-        }
+
+    return $overlap;
+}
+
+
+sub checkOverlapDG
+{
+    my $ref_dgItem1 = shift;
+    my $ref_dgItem2 = shift;
+    my %parameters = @_;
+
+    if ( $parameters{debug} ) {
+	print Dumper $ref_dgItem1;
+	print Dumper $ref_dgItem2;
+    }
+
+    my $overlap = 0;
+    if ( ( ( $ref_dgItem1->{end1} + $parameters{maxGap} ) < $ref_dgItem2->{start1} ) or ( $ref_dgItem1->{chr1} ne $ref_dgItem2->{chr1}) or ( $ref_dgItem1->{strand1} ne $ref_dgItem2->{strand1} ) ) 
+	{  $overlap = -1;  }  ## already beyound the scope
+    else {
+	#my $gap1 = $ref_dgItem2->{start1} - $ref_dgItem1->{end1};
+	my $gap2 = ( $ref_dgItem2->{start2} > $ref_dgItem1->{start2} ) ? ( $ref_dgItem2->{start2} - $ref_dgItem1->{end2} ) : ( $ref_dgItem1->{start2} - $ref_dgItem2->{end2} );
+	my $total1 = ( ( $ref_dgItem2->{end1} > $ref_dgItem1->{end1} ) ? $ref_dgItem2->{end1} : $ref_dgItem1->{end1} ) - $ref_dgItem1->{start1};
+	my $total2 = ( ( $ref_dgItem2->{end2} > $ref_dgItem1->{end2} ) ? $ref_dgItem2->{end2} : $ref_dgItem1->{end2} ) - ( ( $ref_dgItem2->{start2} < $ref_dgItem1->{start2} ) ? $ref_dgItem2->{start2} : $ref_dgItem1->{start2} );
+	if ( ( $total1 < $parameters{maxTotal} ) and ( $total2 < $parameters{maxTotal} ) and ( $gap2 < $parameters{maxGap} ) ) {  $overlap = 1;  }
+    }
+
+    if ( ( $overlap == 1 ) and $parameters{checkReads} ) {
+	my @read1s = split ( /;/, $ref_dgItem1->{reads} );
+	my @read2s = split ( /;/, $ref_dgItem2->{reads} );
+	my $minOverlap1 = 0; #scalar ( @read1s ) * $data[10];
+	my $minOverlap2 = 0; #scalar ( @read2s ) * $data[10];
+	my $overlapCount1 = 0;
+	foreach my $r1 ( @read1s ) {
+	    my $overlapCount2 = 0;
+	    foreach my $r2 ( @read2s ) {
+		$overlapCount2 += readsOverlap ( $parameters{reads}, $r1, $r2 );
+		if ( $overlapCount2 > $minOverlap2 ) {
+		    $overlapCount1++;
+		    last;
+		}
+	    }
+	    if ( $overlapCount1 > $minOverlap1 ) {
+		return 1;
+	    }
+	}
     }
 
     return $overlap;
@@ -689,22 +725,32 @@ sub readsOverlap
     my $rid1 = shift;
     my $rid2 = shift;
 
-    my $overlap = ( ( $ref_read->{$rid1}{start1} > $ref_read->{$rid2}{end1} ) and ( $ref_read->{$rid2}{start1} > $ref_read->{$rid1}{end1} ) and ( $ref_read->{$rid1}{start2} > $ref_read->{$rid2}{end2} ) and ( $ref_read->{$rid2}{start2} > $ref_read->{$rid1}{end2} ) ) ? 1 : 0;
+    my $overlap = ( ( $ref_read->{$rid1}{1}{start} > $ref_read->{$rid2}{1}{end} ) and ( $ref_read->{$rid2}{1}{start} > $ref_read->{$rid1}{1}{end} ) and ( $ref_read->{$rid1}{2}{start} > $ref_read->{$rid2}{2}{end} ) and ( $ref_read->{$rid2}{2}{start} > $ref_read->{$rid1}{2}{end} ) ) ? 1 : 0;
 
     return $overlap;
 }
 
-sub updateDuplexGroup
+sub mergeDuplexGroup
+{
+    my $ref_dgItem1 = shift;
+    my $ref_dgItem2 = shift;
+
+    $ref_dgItem1->{reads} .= ";" . $ref_dgItem2->{reads};
+    $ref_dgItem1->{start1} = $ref_dgItem2->{start1} if ( $ref_dgItem1->{start1} > $ref_dgItem2->{start1} );
+    $ref_dgItem1->{end1} = $ref_dgItem2->{end1} if ( $ref_dgItem1->{end1} < $ref_dgItem2->{end1} );
+    $ref_dgItem1->{start2} = $ref_dgItem2->{start2} if ( $ref_dgItem1->{start2} > $ref_dgItem2->{start2} );
+    $ref_dgItem1->{end2} = $ref_dgItem2->{end2} if ( $ref_dgItem1->{end2} < $ref_dgItem2->{end2} );
+
+    1;
+}
+
+sub addRead2DuplexGroup
 {
     my $ref_dgItem = shift;
     my @data = @_;
 
     $ref_dgItem->{support}++;
-    my @reads = split ( /;/, $data[0] );
-    foreach my $read ( @reads ) {
-        if ( ( $ref_dgItem->{reads} eq $read ) or ( $ref_dgItem->{reads} =~ /^$read;/ ) or ( $ref_dgItem->{reads} =~ /;$read;/ ) or ( $ref_dgItem->{reads} =~ /;$read$/ ) ) { }
-        else { $ref_dgItem->{reads} .= ";" . $read; } 
-    }
+    $ref_dgItem->{reads} .= ";" . $data[0];
     $ref_dgItem->{start1} = $data[1] if ( $ref_dgItem->{start1} < $data[1] );
     $ref_dgItem->{end1} = $data[2] if ( $ref_dgItem->{end1} > $data[2] );
     $ref_dgItem->{start2} = $data[3] if ( $ref_dgItem->{start2} < $data[3] );
@@ -1100,6 +1146,62 @@ sub updateClique
     1;
 }
 
+sub finalizeDuplexGroup
+{
+    my $ref_clique = shift;
+    my $ref_read = shift;
+    my $ref_readmap = shift;
+    my %parameters = @_;
+
+    my $duplexGroup = 0;
+    my $readClusterBed = "tmp.$$.readCluster.bed";
+    open ( RC, ">>$readClusterBed" ) or die ( "Error in opening $readClusterBed for output read clusters!\n" );
+    foreach my $dg ( keys %{$ref_clique} ) {
+        next if ( defined $ref_clique->{$dg}{collapsedTo} );
+
+        $duplexGroup++;
+        my @reads = sort { $a <=> $b } ( split ( /;/, $ref_clique->{$dg}{reads} ) );
+	my $lastRead = -1;
+        $ref_clique->{$dg}{support} = 0;
+        for ( my $idx = 0; $idx < scalar ( @reads ); $idx++ ) {
+	    next if ( $reads[$idx] == $lastRead );
+
+	    $lastRead = $reads[$idx];
+	    $ref_clique->{$dg}{support}++;
+            if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
+                if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 ) {
+                    if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
+                        print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$ref_read->{$reads[$idx]}{name}}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
+                    }
+                    else {
+                        print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{1}{end}, $ref_readmap->{$ref_read->{$reads[$idx]}{name}}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
+                        print RC join ( "\t", $ref_read->{$reads[$idx]}{2}{chr}, $ref_read->{$reads[$idx]}{2}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$ref_read->{$reads[$idx]}{name}}, 2, $ref_read->{$reads[$idx]}{2}{strand} ), "\n";
+                    }
+                    $ref_readmap->{$ref_read->{$reads[$idx]}{name}} = 0 - $ref_readmap->{$ref_read->{$reads[$idx]}{name}};
+                }
+            }
+            else {
+                my @names = split ( /;/, $ref_read->{$reads[$idx]}{name} );
+                foreach my $name ( @names ) { 
+                    if ( $ref_readmap->{$name} > 0 ) {
+                        if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
+                            print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$name}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
+                        }
+                        else {
+                            print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{1}{end}, $ref_readmap->{$name}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
+                            print RC join ( "\t", $ref_read->{$reads[$idx]}{2}{chr}, $ref_read->{$reads[$idx]}{2}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$name}, 2, $ref_read->{$reads[$idx]}{2}{strand} ), "\n";
+                        }
+                        $ref_readmap->{$name} = 0 - $ref_readmap->{$name};
+                    }
+                }
+            }
+        }
+    }
+    close RC;
+
+    1;
+}
+
 sub printDuplexGroup
 {
     my $outputFile = shift;
@@ -1110,16 +1212,14 @@ sub printDuplexGroup
 
     print "Output duplex groups to file $outputFile. \t", `date`;
     open ( OUT, ">$outputFile" ) or die "Cannot open file $outputFile for writing!\n";
-    my $readClusterBed = "tmp.$$.readCluster.bed";
-    open ( RC, ">>$readClusterBed" ) or die ( "Error in opening $readClusterBed for output read clusters!\n" );
 
     my $duplexGroup = 0;
     foreach my $dg ( sort { $ref_clique->{$a}{chr1} cmp $ref_clique->{$b}{chr1} or 
         $ref_clique->{$a}{strand1} cmp $ref_clique->{$b}{strand1} or
-        $ref_clique->{$a}{start1} <=> $ref_clique->{$b}{start1} or
-        $ref_clique->{$a}{end1} <=> $ref_clique->{$b}{end1} or
         $ref_clique->{$a}{chr2} cmp $ref_clique->{$b}{chr2} or
         $ref_clique->{$a}{strand2} cmp $ref_clique->{$b}{strand2} or
+        $ref_clique->{$a}{start1} <=> $ref_clique->{$b}{start1} or
+        $ref_clique->{$a}{end1} <=> $ref_clique->{$b}{end1} or
         $ref_clique->{$a}{start2} <=> $ref_clique->{$b}{start2} or
         $ref_clique->{$a}{end2} <=> $ref_clique->{$b}{end2} } keys %{$ref_clique} ) {
         next if ( $ref_clique->{$dg}{support} < $parameters{minSupport} );
@@ -1145,16 +1245,6 @@ sub printDuplexGroup
                 print OUT $ref_read->{$reads[$idx]}{2}{strand}, ":"; 
                 print OUT $ref_read->{$reads[$idx]}{2}{start}, "-"; 
                 print OUT $ref_read->{$reads[$idx]}{2}{end}, "\n"; 
-                if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 ) {
-                    if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
-                        print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$ref_read->{$reads[$idx]}{name}}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
-                    }
-                    else {
-                        print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{1}{end}, $ref_readmap->{$ref_read->{$reads[$idx]}{name}}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
-                        print RC join ( "\t", $ref_read->{$reads[$idx]}{2}{chr}, $ref_read->{$reads[$idx]}{2}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$ref_read->{$reads[$idx]}{name}}, 2, $ref_read->{$reads[$idx]}{2}{strand} ), "\n";
-                    }
-                    $ref_readmap->{$ref_read->{$reads[$idx]}{name}} = 0 - $ref_readmap->{$ref_read->{$reads[$idx]}{name}};
-                }
             }
             else {
                 my @names = split ( /;/, $ref_read->{$reads[$idx]}{name} );
@@ -1168,22 +1258,11 @@ sub printDuplexGroup
                     print OUT $ref_read->{$reads[$idx]}{2}{strand}, ":"; 
                     print OUT $ref_read->{$reads[$idx]}{2}{start}, "-"; 
                     print OUT $ref_read->{$reads[$idx]}{2}{end}, "\n"; 
-                    if ( $ref_readmap->{$name} > 0 ) {
-                        if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
-                            print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$name}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
-                        }
-                        else {
-                            print RC join ( "\t", $ref_read->{$reads[$idx]}{1}{chr}, $ref_read->{$reads[$idx]}{1}{start}, $ref_read->{$reads[$idx]}{1}{end}, $ref_readmap->{$name}, 1, $ref_read->{$reads[$idx]}{1}{strand} ), "\n";
-                            print RC join ( "\t", $ref_read->{$reads[$idx]}{2}{chr}, $ref_read->{$reads[$idx]}{2}{start}, $ref_read->{$reads[$idx]}{2}{end}, $ref_readmap->{$name}, 2, $ref_read->{$reads[$idx]}{2}{strand} ), "\n";
-                        }
-                        $ref_readmap->{$name} = 0 - $ref_readmap->{$name};
-                    }
                 }
             }
         }
     }
     close OUT;
-    close RC;
 
     print "$duplexGroup clusteres output to file $outputFile.\n\tTime: ", `date`, "\n";
 
