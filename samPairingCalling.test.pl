@@ -106,9 +106,10 @@ sub main
     collapseDuplexGroup ( \%duplexGroup, \%read, maxGap => $environment{maxGap}, maxTotal => $environment{maxTotal} );
     finalizeDuplexGroup ( \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
 
-    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, minSupport => $parameters{minSupport} );
     if ( $parameters{genNGtag} )   {  nonOverlappingTag ( \%read );  }
     printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => 1 );
+    calcScore ( \%duplexGroup, $supportSamFile, $parameters{genomeFile} );
+    printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, minSupport => $parameters{minSupport}, method => $parameters{scoringMethod} );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
 #    printCluster ( $outputFile, supportSam => 1, inputSam => $allSupportSam, method => $parameters{scoringMethod} );
@@ -181,7 +182,7 @@ sub genPairClusterFromSamFile
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
 
-            #last if ( $lineCount > 1000 );
+            last if ( $lineCount > 1000 );
             my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
             if ( $duplexStemLine ) {
                 print DG $duplexStemLine;
@@ -236,7 +237,6 @@ sub encodeSam
 
     1;
 }
-
 
 sub uniqSam 
 {
@@ -362,7 +362,7 @@ sub genPairClusterFromJunctionFile
             print "\tvalid line: $validCount\n\t", `date`;
         }
 
-        #last if ( $lineCount > 100 );
+        last if ( $lineCount > 100 );
         my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
         if ( $duplexStemLine ) {
             print DG $duplexStemLine;
@@ -574,8 +574,8 @@ sub collapseDuplexGroup
         $ref_duplexGroup->{$a}{start2} <=> $ref_duplexGroup->{$b}{start2} or
         $ref_duplexGroup->{$a}{end2} <=> $ref_duplexGroup->{$b}{end2} } keys %{$ref_duplexGroup} ) {
 
-	push @dgArray, $dg;
-	my $lastDGoverlapped = 0;
+        push @dgArray, $dg;
+        my $lastDGoverlapped = 0;
         for ( my $idx = $firstPossible; $idx < $dgCount; $idx++ ) {
             my $overlapped = checkOverlapDG ( $ref_duplexGroup->{$dgArray[$idx]}, $ref_duplexGroup->{$dg}, reads => $ref_read, maxGap => $maxGap, maxTotal => $maxTotal );
             if ( $overlapped == -1 ) {
@@ -583,12 +583,12 @@ sub collapseDuplexGroup
                     #$firstPossible++;
                     $firstPossible = $idx + 1;
                 }
-	    }
+            }
             elsif ( $overlapped > 0 ) {
                 $lastDGoverlapped = 1;
                 mergeDuplexGroup ( $ref_duplexGroup->{$dgArray[$idx]}, $ref_duplexGroup->{$dg} );
                 $ref_duplexGroup->{$dg}{collapsedTo} = $dgArray[$idx];
-		last;
+                last;
             }
             else {
                 $lastDGoverlapped = 1;
@@ -665,8 +665,8 @@ sub checkOverlap
     if ( ( $ref_dgItem->{end1} < $data[2] ) or ( $ref_dgItem->{chr1} ne $data[0]) or ( $ref_dgItem->{strand1} ne $data[1]) ) { $overlap = -1; }
     elsif ( ( $ref_dgItem->{start1} < $data[3] ) and ( $ref_dgItem->{chr2} eq $data[4]) and ( $ref_dgItem->{strand2} eq $data[5]) and ( $ref_dgItem->{start2} < $data[7] ) and ( $data[6] < $ref_dgItem->{end2} ) ) { 
         #$overlap = min4 ( $ref_dgItem->{end1} - $data[2], $data[3] - $ref_dgItem->{start1}, $ref_dgItem->{end2} - $data[6], $data[7] - $ref_dgItem->{start2} ); 
-	my $overlap1 = ( ( $ref_dgItem->{end1} > $data[3] ) ? $data[3] : $ref_dgItem->{end1} ) - ( ( $ref_dgItem->{start1} > $data[2] ) ? $ref_dgItem->{start1} : $data[2] );
-	my $overlap2 = ( ( $ref_dgItem->{end2} > $data[7] ) ? $data[7] : $ref_dgItem->{end2} ) - ( ( $ref_dgItem->{start2} > $data[6] ) ? $ref_dgItem->{start2} : $data[6] );
+        my $overlap1 = ( ( $ref_dgItem->{end1} > $data[3] ) ? $data[3] : $ref_dgItem->{end1} ) - ( ( $ref_dgItem->{start1} > $data[2] ) ? $ref_dgItem->{start1} : $data[2] );
+        my $overlap2 = ( ( $ref_dgItem->{end2} > $data[7] ) ? $data[7] : $ref_dgItem->{end2} ) - ( ( $ref_dgItem->{start2} > $data[6] ) ? $ref_dgItem->{start2} : $data[6] );
 
         $overlap = ( $overlap1 > $overlap2 ) ? $overlap2 : $overlap1;
     }
@@ -682,40 +682,40 @@ sub checkOverlapDG
     my %parameters = @_;
 
     if ( $parameters{debug} ) {
-	print Dumper $ref_dgItem1;
-	print Dumper $ref_dgItem2;
+        print Dumper $ref_dgItem1;
+        print Dumper $ref_dgItem2;
     }
 
     my $overlap = 0;
     if ( ( ( $ref_dgItem1->{end1} + $parameters{maxGap} ) < $ref_dgItem2->{start1} ) or ( $ref_dgItem1->{chr1} ne $ref_dgItem2->{chr1}) or ( $ref_dgItem1->{strand1} ne $ref_dgItem2->{strand1} ) ) 
-	{  $overlap = -1;  }  ## already beyound the scope
+    {  $overlap = -1;  }  ## already beyound the scope
     else {
-	#my $gap1 = $ref_dgItem2->{start1} - $ref_dgItem1->{end1};
-	my $gap2 = ( $ref_dgItem2->{start2} > $ref_dgItem1->{start2} ) ? ( $ref_dgItem2->{start2} - $ref_dgItem1->{end2} ) : ( $ref_dgItem1->{start2} - $ref_dgItem2->{end2} );
-	my $total1 = ( ( $ref_dgItem2->{end1} > $ref_dgItem1->{end1} ) ? $ref_dgItem2->{end1} : $ref_dgItem1->{end1} ) - $ref_dgItem1->{start1};
-	my $total2 = ( ( $ref_dgItem2->{end2} > $ref_dgItem1->{end2} ) ? $ref_dgItem2->{end2} : $ref_dgItem1->{end2} ) - ( ( $ref_dgItem2->{start2} < $ref_dgItem1->{start2} ) ? $ref_dgItem2->{start2} : $ref_dgItem1->{start2} );
-	if ( ( $total1 < $parameters{maxTotal} ) and ( $total2 < $parameters{maxTotal} ) and ( $gap2 < $parameters{maxGap} ) ) {  $overlap = 1;  }
+        #my $gap1 = $ref_dgItem2->{start1} - $ref_dgItem1->{end1};
+        my $gap2 = ( $ref_dgItem2->{start2} > $ref_dgItem1->{start2} ) ? ( $ref_dgItem2->{start2} - $ref_dgItem1->{end2} ) : ( $ref_dgItem1->{start2} - $ref_dgItem2->{end2} );
+        my $total1 = ( ( $ref_dgItem2->{end1} > $ref_dgItem1->{end1} ) ? $ref_dgItem2->{end1} : $ref_dgItem1->{end1} ) - $ref_dgItem1->{start1};
+        my $total2 = ( ( $ref_dgItem2->{end2} > $ref_dgItem1->{end2} ) ? $ref_dgItem2->{end2} : $ref_dgItem1->{end2} ) - ( ( $ref_dgItem2->{start2} < $ref_dgItem1->{start2} ) ? $ref_dgItem2->{start2} : $ref_dgItem1->{start2} );
+        if ( ( $total1 < $parameters{maxTotal} ) and ( $total2 < $parameters{maxTotal} ) and ( $gap2 < $parameters{maxGap} ) ) {  $overlap = 1;  }
     }
 
     if ( ( $overlap == 1 ) and $parameters{checkReads} ) {
-	my @read1s = split ( /;/, $ref_dgItem1->{reads} );
-	my @read2s = split ( /;/, $ref_dgItem2->{reads} );
-	my $minOverlap1 = 0; #scalar ( @read1s ) * $data[10];
-	my $minOverlap2 = 0; #scalar ( @read2s ) * $data[10];
-	my $overlapCount1 = 0;
-	foreach my $r1 ( @read1s ) {
-	    my $overlapCount2 = 0;
-	    foreach my $r2 ( @read2s ) {
-		$overlapCount2 += readsOverlap ( $parameters{reads}, $r1, $r2 );
-		if ( $overlapCount2 > $minOverlap2 ) {
-		    $overlapCount1++;
-		    last;
-		}
-	    }
-	    if ( $overlapCount1 > $minOverlap1 ) {
-		return 1;
-	    }
-	}
+        my @read1s = split ( /;/, $ref_dgItem1->{reads} );
+        my @read2s = split ( /;/, $ref_dgItem2->{reads} );
+        my $minOverlap1 = 0; #scalar ( @read1s ) * $data[10];
+        my $minOverlap2 = 0; #scalar ( @read2s ) * $data[10];
+        my $overlapCount1 = 0;
+        foreach my $r1 ( @read1s ) {
+            my $overlapCount2 = 0;
+            foreach my $r2 ( @read2s ) {
+                $overlapCount2 += readsOverlap ( $parameters{reads}, $r1, $r2 );
+                if ( $overlapCount2 > $minOverlap2 ) {
+                    $overlapCount1++;
+                    last;
+                }
+            }
+            if ( $overlapCount1 > $minOverlap1 ) {
+                return 1;
+            }
+        }
     }
 
     return $overlap;
@@ -1163,13 +1163,13 @@ sub finalizeDuplexGroup
 
         $duplexGroup++;
         my @reads = sort { $a <=> $b } ( split ( /;/, $ref_clique->{$dg}{reads} ) );
-	my $lastRead = -1;
+        my $lastRead = -1;
         $ref_clique->{$dg}{support} = 0;
         for ( my $idx = 0; $idx < scalar ( @reads ); $idx++ ) {
-	    next if ( $reads[$idx] == $lastRead );
+            next if ( $reads[$idx] == $lastRead );
 
-	    $lastRead = $reads[$idx];
-	    $ref_clique->{$dg}{support}++;
+            $lastRead = $reads[$idx];
+            $ref_clique->{$dg}{support}++;
             if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
                 if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 ) {
                     if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
@@ -1228,14 +1228,15 @@ sub printDuplexGroup
         next if ( defined $ref_clique->{$dg}{collapsedTo} );
 
         $duplexGroup++;
-        my @reads = split ( /;/, $ref_clique->{$dg}{reads} );
+        my $score = supportScore ( $ref_clique->{$dg}{support}, $ref_clique->{$dg}{cov}{1}, $ref_clique->{$dg}{cov}{2}, $parameters{method} );
         print OUT "Group $dg == position "; 
         print OUT $ref_clique->{$dg}{chr1}, "(", $ref_clique->{$dg}{strand1}, "):";
         print OUT $ref_clique->{$dg}{start1}, "-", $ref_clique->{$dg}{end1};
         print OUT "|", $ref_clique->{$dg}{chr2}, "(", $ref_clique->{$dg}{strand2}, "):";
         print OUT $ref_clique->{$dg}{start2}, "-", $ref_clique->{$dg}{end2};
-        print OUT ", support ", $ref_clique->{$dg}{support}, "\n";
+        print OUT ", support $ref_clique->{$dg}{support}, left $ref_clique->{$dg}{cov}{1}, right $ref_clique->{$dg}{cov}{2}, score $score.\n----\n";
 
+        my @reads = split ( /;/, $ref_clique->{$dg}{reads} );
         for ( my $idx = 0; $idx < scalar ( @reads ); $idx++ ) {
             if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
                 print OUT "  ", $ref_read->{$reads[$idx]}{name}, "\t"; 
@@ -1328,10 +1329,8 @@ sub printDuplexGroup_maxClique
 
 sub printSupportSam
 {
-    my $outputFile = shift;
-    my $allSupportSam = shift;
-    my $ref_read = shift;
-    my $ref_readmap = shift;
+    my $outputFile = shift; my $allSupportSam = shift;
+    my $ref_read = shift; my $ref_readmap = shift;
     my %parameters = @_;
 
     if ( $parameters{outputRead} ) {
@@ -1358,16 +1357,12 @@ sub printSupportSam
             next if ( $line =~ /^#/ );
             if ( $line =~ /^@/ ) { print OUT $line if ( $firstSam ); }
             else {
-                $lineCount++;
-                if ( $lineCount % 1000000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
-
-                $firstSam = 0;
-
+                $lineCount++; if ( $lineCount % 1000000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
+                $firstSam = 0; chomp $line;
                 my @data = split ( /\t/, $line );
                 next if ( ( not defined $ref_readmap->{$data[0]} ) or ( $ref_readmap->{$data[0]} > 0 ) );
                 my $readID = 0 - $ref_readmap->{$data[0]};
 
-                chomp $line;
                 my $realReadID = ( defined $ref_read->{$readID}{clique} ) ? $ref_read->{$readID}{collapsedTo} : $readID;
                 if ( defined $ref_read->{$realReadID}{cigar} ) { 
                     my ( $isChiastic, $cigar ) = split ( /:/, $ref_read->{$realReadID}{cigar} );
@@ -1380,9 +1375,9 @@ sub printSupportSam
                         $data[10] = reverseRead ( $data[5], $data[10] );
                     } 
                     $data[5] = $cigar;
-                    print OUT join ( "\t", @data, "\tXG:i:$isChiastic" );
+                    print OUT join ( "\t", @data, "XG:i:$isChiastic" );
                 }
-                else { print OUT $line; }
+                else { print OUT $line, "\tXG:i:0"; }
 
                 print OUT "\tDG:i:$ref_read->{$realReadID}{clique}";
                 if ( defined $ref_read->{$readID}{ngTag} ) { print OUT "\tNG:i:$ref_read->{$readID}{ngTag}"; }
@@ -1397,9 +1392,68 @@ sub printSupportSam
 
     }
     close OUT;
-
     print "$validCount alignments output to file $outputFile.\n\tTime: ", `date`, "\n";
+
     return ( $lineCount, $validCount );
+
+    1;
+}
+
+sub calcScore 
+{
+    my $ref_clique = shift;
+    my $supportSam = shift;
+    my $genomeSizeFile = shift;
+
+    my $duplexGroup = 0;
+    my $posBed = "tmp.$$.cluster.pos.bed";
+    my $negBed = "tmp.$$.cluster.neg.bed";
+    open ( POS, ">$posBed" ); 
+    open ( NEG, ">$negBed" ); 
+    foreach my $dg ( sort { $ref_clique->{$a}{chr1} cmp $ref_clique->{$b}{chr1} or 
+        $ref_clique->{$a}{strand1} cmp $ref_clique->{$b}{strand1} or
+        $ref_clique->{$a}{chr2} cmp $ref_clique->{$b}{chr2} or
+        $ref_clique->{$a}{strand2} cmp $ref_clique->{$b}{strand2} or
+        $ref_clique->{$a}{start1} <=> $ref_clique->{$b}{start1} or
+        $ref_clique->{$a}{end1} <=> $ref_clique->{$b}{end1} or
+        $ref_clique->{$a}{start2} <=> $ref_clique->{$b}{start2} or
+        $ref_clique->{$a}{end2} <=> $ref_clique->{$b}{end2} } keys %{$ref_clique} ) {
+        next if ( defined $ref_clique->{$dg}{collapsedTo} );
+
+        $duplexGroup++;
+        if ( $ref_clique->{$dg}{strand1} eq "+" ) { print POS join ( "\t", $ref_clique->{$dg}{chr1}, $ref_clique->{$dg}{start1}, $ref_clique->{$dg}{end1}, $ref_clique->{$dg}{strand1}, $dg, "1" ), "\n"; }
+        else { print NEG join ( "\t", $ref_clique->{$dg}{chr1}, $ref_clique->{$dg}{start1}, $ref_clique->{$dg}{end1}, $ref_clique->{$dg}{strand1}, $dg, "1" ), "\n"; }
+        if ( $ref_clique->{$dg}{strand2} eq "+" ) { print POS join ( "\t", $ref_clique->{$dg}{chr2}, $ref_clique->{$dg}{start2}, $ref_clique->{$dg}{end2}, $ref_clique->{$dg}{strand2}, $dg, "2" ), "\n"; }
+        else { print NEG join ( "\t", $ref_clique->{$dg}{chr2}, $ref_clique->{$dg}{start2}, $ref_clique->{$dg}{end2}, $ref_clique->{$dg}{strand2}, $dg, "2" ), "\n"; }
+    }
+    close POS;
+    close NEG;
+
+    my $supportBam = "tmp.$$.support";
+    print STDERR `samtools view -bS $supportSam | samtools sort - $supportBam`;
+    print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand + > "tmp.$$.pos.genomeCov"`; 
+    print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand - > "tmp.$$.neg.genomeCov"`; 
+
+    print STDERR `bedtools intersect -wb -a "tmp.$$.pos.genomeCov" -b $posBed > "tmp.$$.pos.intCov"`; 
+    addCoverage ( "tmp.$$.pos.intCov", $ref_clique );
+    print STDERR `bedtools intersect -wb -a "tmp.$$.neg.genomeCov" -b $negBed > "tmp.$$.neg.intCov"`; 
+    addCoverage ( "tmp.$$.neg.intCov", $ref_clique );
+
+    1;
+}
+
+sub addCoverage 
+{
+    my $intCovFile = shift;
+    my $ref_clique = shift;
+
+    open ( ICF, $intCovFile );
+    while ( my $line = <ICF> ) {
+        chomp $line;
+        my @data = split ( /\t/, $line );
+        if ( ( not defined $ref_clique->{$data[8]} ) or ( not defined $ref_clique->{$data[8]}{cov}{$data[9]} ) or ( $data[3] > $ref_clique->{$data[8]}{cov}{$data[9]} ) ) { $ref_clique->{$data[8]}{cov}{$data[9]} =  $data[3]; }
+    }
+    close ICF;
 
     1;
 }
