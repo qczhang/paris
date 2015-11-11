@@ -40,8 +40,8 @@ my %global = (
 ##--------------------------------------------------
 #
 
-use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z $opt_c $opt_v $opt_r );
-&getopts('hVDi:j:s:o:g:a:t:l:p:z:v:c:r');
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z $opt_c $opt_v $opt_r $opt_m );
+&getopts('hVDi:j:s:o:g:a:t:l:p:z:v:c:rm');
 
 my $usage = <<_EOH_;
 ## --------------------------------------
@@ -68,6 +68,8 @@ my $usage = <<_EOH_;
 
   -r    remove redundancy in input sam or junctions (default: no)
   -n    generate a NG tag for IGV visualization in the output sam file of support reads (default: no)
+
+  -m	allow one read in multiple duplex groups
 _EOH_
 ;
 
@@ -102,9 +104,10 @@ sub main
     }
 
     my %duplexGroup = (); 
-    genDuplexGroup ( \%duplexGroup, \%read, minOverlap => $parameters{minOverlap} );
+    genDuplexGroup ( \%duplexGroup, \%read, minOverlap => $parameters{minOverlap}, multipleDG => $parameters{multipleDG} );
     collapseDuplexGroup ( \%duplexGroup, \%read, maxGap => $environment{maxGap}, maxTotal => $environment{maxTotal} );
     finalizeDuplexGroup ( \%duplexGroup, \%read, \%readmap, method => $parameters{scoringMethod}, minSupport => $parameters{minSupport} );
+    finalizeReads (\%read, \%readmap, \%duplexGroup );
 
     if ( $parameters{genNGtag} )   {  nonOverlappingTag ( \%read );  }
     printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => 1 );
@@ -145,6 +148,8 @@ sub init {
     else { $parameters{scoringMethod} = "harmonic"; }
     if ( defined $opt_r ) { $parameters{removeRedundancy} = 1; }
     else { $parameters{removeRedundancy} = 0; }
+    if ( defined $opt_m ) { $parameters{multipleDG} = 1; }
+    else { $parameters{multipleDG} = 0; }
 
     return ( %parameters );
 }
@@ -182,7 +187,7 @@ sub genPairClusterFromSamFile
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n"; print "\tvalid line: $validCount\n\t", `date`; }
 
-            last if ( $lineCount > 1000 );
+            last if ( ( $opt_D ) and ( $lineCount > 1000 ) );
             my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromSamLine ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
             if ( $duplexStemLine ) {
                 print DG $duplexStemLine;
@@ -216,7 +221,7 @@ sub encodeSam
         if ( $line =~ /^@/ ) { print OUT $line; }
         else {
             $lineCount++; if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
-            #last if ( $lineCount > 20000 );
+            last if ( ( $opt_D ) and ( $lineCount > 1000 ) );
 
             my @data = split ( /\t/, $line );
             $global{readUniqCount}++;
@@ -258,7 +263,7 @@ sub uniqSam
         if ( $line =~ /^@/ ) { print OUT $line; }
         else {
             $lineCount++; if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
-            #last if ( $lineCount > 20000 );
+            last if ( ( $opt_D ) and ( $lineCount > 1000 ) );
 
             my @data = split ( /\t/, $line );
             if ( ( $data[9] ne $seq ) or ( $data[3] != $pos ) or ( $data[2] ne $seqName ) ) {
@@ -362,7 +367,7 @@ sub genPairClusterFromJunctionFile
             print "\tvalid line: $validCount\n\t", `date`;
         }
 
-        last if ( $lineCount > 100 );
+	last if ( ( $opt_D ) and ( $lineCount > 100 ) );
         my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
         if ( $duplexStemLine ) {
             print DG $duplexStemLine;
@@ -396,7 +401,7 @@ sub encodeJunction
         else {
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
-            #last if ( $lineCount > 1000 );
+	    last if ( ( $opt_D ) and ( $lineCount > 100 ) );
 
             my @data = split ( /\t/, $line );
             $global{readUniqCount}++;
@@ -441,7 +446,7 @@ sub uniqJunction
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            #last if ( $lineCount > 1000 );
+	    last if ( ( $opt_D ) and ( $lineCount > 100 ) );
             my @data = split ( /\t/, $line );
             if ( ( $data[10] != $pos1 ) or ( $data[12] != $pos2 ) 
                     or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
@@ -487,7 +492,7 @@ sub genPairClusterFromOneJunction
     my $cigar = "";  my $isChiastic = 0;
     if ( ( $data[0] ne $data[3] ) or ( $data[2] ne $data[5] ) ) {
         $isChiastic = 2;
-        $cigar = $data[11] . ":" . $data[13];
+        $cigar = $data[11] . "|" . $data[13];
     }
     else {
         if ( $data[2] eq "+" )  {
@@ -632,6 +637,7 @@ sub genDuplexGroup
                 addRead2DuplexGroup ( $ref_duplexGroup->{$idx}, $id1, $start1, $end1,$start2, $end2 );
                 if ( not defined $ref_read->{$id1}{clique} ) { $ref_read->{$id1}{clique} = $idx; }
                 else { $ref_read->{$id1}{clique} .= ";" . $idx; }
+		last if ( not $parameters{multipleDG} ); 
             }
             elsif ( $overlapped == -1 ) {    ## the start of this read is beyond the firstPossible duplex, so no need to check firstPossible in the future
                 if ( not $lastDGoverlapped ) {
@@ -1170,6 +1176,7 @@ sub finalizeDuplexGroup
 
             $lastRead = $reads[$idx];
             $ref_clique->{$dg}{support}++;
+	    $ref_read->{$reads[$idx]}{clique} .= ";" . $dg;
             if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
                 if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 ) {
                     if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
@@ -1200,6 +1207,36 @@ sub finalizeDuplexGroup
         }
     }
     close RC;
+
+    1;
+}
+
+sub finalizeReads
+{
+    my $ref_read = shift;
+    my $ref_readmap = shift;
+    my $ref_clique = shift;
+    my %parameters = @_;
+
+    my $duplexGroup = 0;
+    foreach my $name ( keys %{$ref_readmap} ) {
+	next if ( $ref_readmap->{$name} > 0 );
+
+        $duplexGroup++;
+	my $readID = 0 - $ref_readmap->{$name};
+        my @cliques = sort { $a <=> $b } ( split ( /;/, $ref_read->{$readID}{clique} ) );
+        my $lastClique = -1;
+	my $cliqueString = "";
+        for ( my $idx = 0; $idx < scalar ( @cliques ); $idx++ ) {
+            next if ( $cliques[$idx] == $lastClique );
+            next if ( defined $ref_clique->{$cliques[$idx]}{collapsedTo} );
+
+	    if ( not $cliqueString ) { $cliqueString = $cliques[$idx]; }
+	    else { $cliqueString .= ";" . $cliques[$idx]; }
+            $lastClique = $cliques[$idx];
+        }
+	$ref_read->{$readID}{clique} = $cliqueString;
+    }
 
     1;
 }
@@ -1363,18 +1400,22 @@ sub printSupportSam
                 next if ( ( not defined $ref_readmap->{$data[0]} ) or ( $ref_readmap->{$data[0]} > 0 ) );
                 my $readID = 0 - $ref_readmap->{$data[0]};
 
-                my $realReadID = ( defined $ref_read->{$readID}{clique} ) ? $ref_read->{$readID}{collapsedTo} : $readID;
+                my $realReadID = ( defined $ref_read->{$readID}{collapsedTo} ) ? $ref_read->{$readID}{collapsedTo} : $readID;
                 if ( defined $ref_read->{$realReadID}{cigar} ) { 
                     my ( $isChiastic, $cigar ) = split ( /:/, $ref_read->{$realReadID}{cigar} );
                     my @data = split ( /\t/, $line );
-                    if ( $isChiastic == 0 ) { next if ( $data[1] & 256 ); }
-                    else {
-                        next if ( ( $isChiastic == 1 ) and ( not ( $data[1] & 256 ) ) );
+                    if ( $isChiastic == 0 ) { 
+			next if ( ( $data[1] == 256 ) or ( $data[1] == 16 ) );
+                        $data[1] = ( $data[1] & 3839 );
+                    	$data[5] = $cigar;
+		    }
+                    elsif ( $isChiastic == 1 ) {
+			next if ( ( $data[1] == 0 ) or ( $data[1] == 272 ) );
                         $data[1] = ( $data[1] & 3839 );
                         $data[9] = reverseRead ( $data[5], $data[9] );
                         $data[10] = reverseRead ( $data[5], $data[10] );
+                    	$data[5] = $cigar;
                     } 
-                    $data[5] = $cigar;
                     print OUT join ( "\t", @data, "XG:i:$isChiastic" );
                 }
                 else { print OUT $line, "\tXG:i:0"; }
