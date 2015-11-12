@@ -367,7 +367,7 @@ sub genPairClusterFromJunctionFile
             print "\tvalid line: $validCount\n\t", `date`;
         }
 
-	last if ( ( $opt_D ) and ( $lineCount > 100 ) );
+        last if ( ( $opt_D ) and ( $lineCount > 100 ) );
         my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
         if ( $duplexStemLine ) {
             print DG $duplexStemLine;
@@ -401,7 +401,7 @@ sub encodeJunction
         else {
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
-	    last if ( ( $opt_D ) and ( $lineCount > 100 ) );
+            last if ( ( $opt_D ) and ( $lineCount > 100 ) );
 
             my @data = split ( /\t/, $line );
             $global{readUniqCount}++;
@@ -446,7 +446,7 @@ sub uniqJunction
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-	    last if ( ( $opt_D ) and ( $lineCount > 100 ) );
+            last if ( ( $opt_D ) and ( $lineCount > 100 ) );
             my @data = split ( /\t/, $line );
             if ( ( $data[10] != $pos1 ) or ( $data[12] != $pos2 ) 
                     or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
@@ -623,7 +623,11 @@ sub genDuplexGroup
     print "Now generate duplex group from file $duplexGroupBedFileSorted\n\t", `date`;
     while ( my $line = <BED> ) {
         next if ( $line =~ /^#/ ); chomp $line;
-        $lineCount++; if ( $lineCount % 1000 == 0 ) { print "line: $lineCount\n\t", `date`; }
+        $lineCount++; if ( $lineCount % 10000 == 0 ) { 
+            print "line: $lineCount,";
+            print "\tfirstPossible: $firstPossible,";
+            print "\tduplexCount: $duplexCount\n",;
+            print "\t", `date`; }
         my ( $chr1, $start1, $end1, $id1, $score1, $strand1, $chr2, $start2, $end2, $id2, $score2, $strand2 ) = split ( /\t/, $line );
 
         my $lastDGoverlapped = 0;
@@ -637,7 +641,7 @@ sub genDuplexGroup
                 addRead2DuplexGroup ( $ref_duplexGroup->{$idx}, $id1, $start1, $end1,$start2, $end2 );
                 if ( not defined $ref_read->{$id1}{clique} ) { $ref_read->{$id1}{clique} = $idx; }
                 else { $ref_read->{$id1}{clique} .= ";" . $idx; }
-		last if ( not $parameters{multipleDG} ); 
+                last if ( not $parameters{multipleDG} ); 
             }
             elsif ( $overlapped == -1 ) {    ## the start of this read is beyond the firstPossible duplex, so no need to check firstPossible in the future
                 if ( not $lastDGoverlapped ) {
@@ -668,8 +672,8 @@ sub checkOverlap
     my @data = @_;
 
     my $overlap = 0;
-    if ( ( $ref_dgItem->{end1} < $data[2] ) or ( $ref_dgItem->{chr1} ne $data[0]) or ( $ref_dgItem->{strand1} ne $data[1]) ) { $overlap = -1; }
-    elsif ( ( $ref_dgItem->{start1} < $data[3] ) and ( $ref_dgItem->{chr2} eq $data[4]) and ( $ref_dgItem->{strand2} eq $data[5]) and ( $ref_dgItem->{start2} < $data[7] ) and ( $data[6] < $ref_dgItem->{end2} ) ) { 
+    if ( ( $ref_dgItem->{end1} < $data[2] ) or ( $ref_dgItem->{chr2} ne $data[4]) or ( $ref_dgItem->{strand2} ne $data[5]) or ( $ref_dgItem->{chr1} ne $data[0]) or ( $ref_dgItem->{strand1} ne $data[1]) ) { $overlap = -1; }
+    elsif ( ( $ref_dgItem->{start1} <= $data[3] ) and ( $ref_dgItem->{start2} <= $data[7] ) and ( $data[6] <= $ref_dgItem->{end2} ) ) { 
         #$overlap = min4 ( $ref_dgItem->{end1} - $data[2], $data[3] - $ref_dgItem->{start1}, $ref_dgItem->{end2} - $data[6], $data[7] - $ref_dgItem->{start2} ); 
         my $overlap1 = ( ( $ref_dgItem->{end1} > $data[3] ) ? $data[3] : $ref_dgItem->{end1} ) - ( ( $ref_dgItem->{start1} > $data[2] ) ? $ref_dgItem->{start1} : $data[2] );
         my $overlap2 = ( ( $ref_dgItem->{end2} > $data[7] ) ? $data[7] : $ref_dgItem->{end2} ) - ( ( $ref_dgItem->{start2} > $data[6] ) ? $ref_dgItem->{start2} : $data[6] );
@@ -693,7 +697,7 @@ sub checkOverlapDG
     }
 
     my $overlap = 0;
-    if ( ( ( $ref_dgItem1->{end1} + $parameters{maxGap} ) < $ref_dgItem2->{start1} ) or ( $ref_dgItem1->{chr1} ne $ref_dgItem2->{chr1}) or ( $ref_dgItem1->{strand1} ne $ref_dgItem2->{strand1} ) ) 
+    if ( ( ( $ref_dgItem1->{end1} + $parameters{maxGap} ) < $ref_dgItem2->{start1} ) or ( $ref_dgItem1->{chr2} ne $ref_dgItem2->{chr2}) or ( $ref_dgItem1->{strand2} ne $ref_dgItem2->{strand2} ) or ( $ref_dgItem1->{chr1} ne $ref_dgItem2->{chr1}) or ( $ref_dgItem1->{strand1} ne $ref_dgItem2->{strand1} ) ) 
     {  $overlap = -1;  }  ## already beyound the scope
     else {
         #my $gap1 = $ref_dgItem2->{start1} - $ref_dgItem1->{end1};
@@ -1176,7 +1180,7 @@ sub finalizeDuplexGroup
 
             $lastRead = $reads[$idx];
             $ref_clique->{$dg}{support}++;
-	    $ref_read->{$reads[$idx]}{clique} .= ";" . $dg;
+            $ref_read->{$reads[$idx]}{clique} .= ";" . $dg;
             if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
                 if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 ) {
                     if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
@@ -1220,22 +1224,22 @@ sub finalizeReads
 
     my $duplexGroup = 0;
     foreach my $name ( keys %{$ref_readmap} ) {
-	next if ( $ref_readmap->{$name} > 0 );
+        next if ( $ref_readmap->{$name} > 0 );
 
         $duplexGroup++;
-	my $readID = 0 - $ref_readmap->{$name};
+        my $readID = 0 - $ref_readmap->{$name};
         my @cliques = sort { $a <=> $b } ( split ( /;/, $ref_read->{$readID}{clique} ) );
         my $lastClique = -1;
-	my $cliqueString = "";
+        my $cliqueString = "";
         for ( my $idx = 0; $idx < scalar ( @cliques ); $idx++ ) {
             next if ( $cliques[$idx] == $lastClique );
             next if ( defined $ref_clique->{$cliques[$idx]}{collapsedTo} );
 
-	    if ( not $cliqueString ) { $cliqueString = $cliques[$idx]; }
-	    else { $cliqueString .= ";" . $cliques[$idx]; }
+            if ( not $cliqueString ) { $cliqueString = $cliques[$idx]; }
+            else { $cliqueString .= ";" . $cliques[$idx]; }
             $lastClique = $cliques[$idx];
         }
-	$ref_read->{$readID}{clique} = $cliqueString;
+        $ref_read->{$readID}{clique} = $cliqueString;
     }
 
     1;
@@ -1405,16 +1409,16 @@ sub printSupportSam
                     my ( $isChiastic, $cigar ) = split ( /:/, $ref_read->{$realReadID}{cigar} );
                     my @data = split ( /\t/, $line );
                     if ( $isChiastic == 0 ) { 
-			next if ( ( $data[1] == 256 ) or ( $data[1] == 16 ) );
+                        next if ( ( $data[1] == 256 ) or ( $data[1] == 16 ) );
                         $data[1] = ( $data[1] & 3839 );
-                    	$data[5] = $cigar;
-		    }
+                        $data[5] = $cigar;
+                    }
                     elsif ( $isChiastic == 1 ) {
-			next if ( ( $data[1] == 0 ) or ( $data[1] == 272 ) );
+                        next if ( ( $data[1] == 0 ) or ( $data[1] == 272 ) );
                         $data[1] = ( $data[1] & 3839 );
                         $data[9] = reverseRead ( $data[5], $data[9] );
                         $data[10] = reverseRead ( $data[5], $data[10] );
-                    	$data[5] = $cigar;
+                        $data[5] = $cigar;
                     } 
                     print OUT join ( "\t", @data, "XG:i:$isChiastic" );
                 }
