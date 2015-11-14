@@ -148,7 +148,7 @@ sub readGTF_ensembl_new {
             if ( $type eq "gene_id" ) { $geneID = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "transcript_id" ) { $transcriptID = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "exon_id" ) { $exonID = substr ( $field, $index+2, -1 ); }
-            elsif ( $type eq "exon_number" ) { $exonNum = substr ( $field, $index+2, -1 ); }
+            elsif ( $type eq "exon_number" ) { $exonNum = substr ( $field, $index+1 ); }
         }
 =cut
         if ( ( $feature eq "gene" ) and ( $geneID ) ) {                   # not defined in ensembl
