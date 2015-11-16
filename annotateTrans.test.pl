@@ -24,8 +24,8 @@ my %global = (
     bw => 100,
 );
 
-use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_s $opt_a $opt_o $opt_f );
-&getopts('hVDi:s:a:o:f:');
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_s $opt_a $opt_o $opt_f $opt_c );
+&getopts('hVDi:s:a:o:f:c');
 
 my $usage = <<_EOH_;
 ## --------------------------------------
@@ -39,6 +39,7 @@ $0 -i read_group_file -s support_sam -o output_annotated_file
 # more options:
  -a     annotation GTF file
  -f     filter ("onlyIntra|onlyInter|requireBothAnnotation|requireAnnotation")
+ -c     collapse transcripts of the same gene
 _EOH_
 ;
 
@@ -63,7 +64,7 @@ sub main {
     my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$parameters{filter}.sam/;
     printSupportSam ( \%supportReads, $filteredSAMfile );
 
-    1;
+1;
 }
 
 ## ----------------------------------
@@ -83,6 +84,8 @@ sub init
     else  {  $parameters{annotationFile} = $enviroment{annotationFile};  }
     if ( defined $opt_f ) { $parameters{filter} = $opt_f; }
     else  {  $parameters{filter} = "noFiltering";  }
+    if ( defined $opt_c ) { $parameters{collapseGene} = 1; }
+    else  {  $parameters{collapseGene} = 0;  }
 
     return ( %parameters );
 }
@@ -121,76 +124,76 @@ sub loadReadGroup
     my $tmpLine = "";
     OUTER: while ( my $line = <RG> ) {
         next if ( $line =~ /^#/ );
-	if ( $lastLine ) {
-	    $tmpLine = $line;
-	    $line = $lastLine;
-	}
+        if ( $lastLine ) {
+            $tmpLine = $line;
+            $line = $lastLine;
+        }
 
         if ( $line =~ /^Group/ ) {
             $readGroupCount++;
-	    last OUTER if ( ( $readGroupCount > 100 ) and $opt_D );
+            last OUTER if ( ( $readGroupCount > 100 ) and $opt_D );
             my ( $dgID, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $support ) = ( $line =~ /^Group (\d+) == position (.+)\(([+-])\):(\d+)-(\d+)\|(.+)\(([+-])\):(\d+)-(\d+), support (\d+)/ );
 
             my @overlapRegion1 = ();
-            &convert ( \@overlapRegion1, $chr1, $strand1, $start1, $end1, $ref_annotation, $ref_bin, bw => $parameters{bw} );
+            my $allTrans = &convert ( \@overlapRegion1, $chr1, $strand1, $start1, $end1, $ref_annotation, $ref_bin, bw => $parameters{bw}, collapseGene => $parameters{collapseGene} );
             my @overlapRegion2 = ();
-            &convert ( \@overlapRegion2, $chr2, $strand2, $start2, $end2, $ref_annotation, $ref_bin, bw => $parameters{bw} );
+            my $allTrans = &convert ( \@overlapRegion2, $chr2, $strand2, $start2, $end2, $ref_annotation, $ref_bin, bw => $parameters{bw}, collapseGene => $parameters{collapseGene} );
 
             my $transcriptLine = "";
             if ( ( scalar(@overlapRegion1) ) and ( scalar (@overlapRegion2) ) ) {
-	        for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /3); $idx1++ ) {
+                for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /3); $idx1++ ) {
                     for ( my $idx2 = 0; $idx2 < (scalar (@overlapRegion2) /3); $idx2++ ) {
-		    	print BOTH join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
-		    	print ANY join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
-			if ( $overlapRegion1[3*$idx1] eq $overlapRegion2[3*$idx2] ) {
-			    print INTRA join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
-		            if ( $parameters{filter} ne "onlyInter") {
-                            	$transcriptLine .= $overlapRegion1[3*$idx1] . "\t" . $overlapRegion1[3*$idx1+1] . "\t<" . $overlapRegion1[3*$idx1+2] . ">";
-                            	$transcriptLine .= "\t<=>\t" . $overlapRegion2[3*$idx2] . "\t" . $overlapRegion2[3*$idx2+1] . "\t<" . $overlapRegion2[3*$idx2+2] . ">\n";
-			    }
-                    	}
-		    	else {
-			    print INTER join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
-            		    if ( $parameters{filter} ne "onlyIntra" ) {
-                            	$transcriptLine .= $overlapRegion1[3*$idx1] . "\t" . $overlapRegion1[3*$idx1+1] . "\t<" . $overlapRegion1[3*$idx1+2] . ">";
-                            	$transcriptLine .= "\t<=>\t" . $overlapRegion2[3*$idx2] . "\t" . $overlapRegion2[3*$idx2+1] . "\t<" . $overlapRegion2[3*$idx2+2] . ">\n";
-                       	    }
-                    	}
+                        print BOTH join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
+                        print ANY join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
+                        if ( $overlapRegion1[3*$idx1] eq $overlapRegion2[3*$idx2] ) {
+                            print INTRA join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
+                            if ( $parameters{filter} ne "onlyInter") {
+                                $transcriptLine .= $overlapRegion1[3*$idx1] . "\t" . $overlapRegion1[3*$idx1+1] . "\t<" . $overlapRegion1[3*$idx1+2] . ">";
+                                $transcriptLine .= "\t<=>\t" . $overlapRegion2[3*$idx2] . "\t" . $overlapRegion2[3*$idx2+1] . "\t<" . $overlapRegion2[3*$idx2+2] . ">\n";
+                            }
+                        }
+                        else {
+                            print INTER join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $overlapRegion2[3*$idx2+2], $overlapRegion1[3*$idx1] . "|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
+                            if ( $parameters{filter} ne "onlyIntra" ) {
+                                $transcriptLine .= $overlapRegion1[3*$idx1] . "\t" . $overlapRegion1[3*$idx1+1] . "\t<" . $overlapRegion1[3*$idx1+2] . ">";
+                                $transcriptLine .= "\t<=>\t" . $overlapRegion2[3*$idx2] . "\t" . $overlapRegion2[3*$idx2+1] . "\t<" . $overlapRegion2[3*$idx2+2] . ">\n";
+                            }
+                        }
                     }
                 }
-	    }
+            }
             elsif ( ( scalar(@overlapRegion1) ) and ( not scalar (@overlapRegion2) ) ) {
                 for ( my $idx1 = 0; $idx1 < (scalar (@overlapRegion1) /3); $idx1++ ) {
-		    print ANY join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $start2, $end2, $overlapRegion1[3*$idx1] . "|null", $support, $strand1, $strand2, "$dgID\n" );
+                    print ANY join ( "\t", $chr1, $overlapRegion1[3*$idx1+2], $chr2, $start2, $end2, $overlapRegion1[3*$idx1] . "|null", $support, $strand1, $strand2, "$dgID\n" );
                     if ( ( $parameters{filter} eq "requireAnnotation" ) or ( $parameters{filter} eq "noFiltering" ) ) {
-			$transcriptLine .= $overlapRegion1[3*$idx1] . "\t" . $overlapRegion1[3*$idx1+1] . "\t<" . $overlapRegion1[3*$idx1+2] . ">";
-			$transcriptLine .= "\t<=>\tnull\t-\t-\t<-\t->\n";
+                        $transcriptLine .= $overlapRegion1[3*$idx1] . "\t" . $overlapRegion1[3*$idx1+1] . "\t<" . $overlapRegion1[3*$idx1+2] . ">";
+                        $transcriptLine .= "\t<=>\tnull\t-\t-\t<-\t->\n";
                     }
                 }
-	    }
-	    elsif ( ( not scalar(@overlapRegion1) ) and ( scalar (@overlapRegion2) ) ) {
+            }
+            elsif ( ( not scalar(@overlapRegion1) ) and ( scalar (@overlapRegion2) ) ) {
                 for ( my $idx2 = 0; $idx2 < (scalar (@overlapRegion2) /3); $idx2++ ) {
-		    print ANY join ( "\t", $chr1, $start1, $end1, $chr2, $overlapRegion2[3*$idx2+2], "null|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
+                    print ANY join ( "\t", $chr1, $start1, $end1, $chr2, $overlapRegion2[3*$idx2+2], "null|" . $overlapRegion2[3*$idx2], $support, $strand1, $strand2, "$dgID\n" );
                     if ( ( $parameters{filter} eq "requireAnnotation" ) or ( $parameters{filter} eq "noFiltering" ) ) {
-			$transcriptLine .= "null\t-\t-\t<-\t->";
-			$transcriptLine .= "\t<=>\t" . $overlapRegion2[3*$idx2] . "\t" . $overlapRegion2[3*$idx2+1] . "\t<" . $overlapRegion2[3*$idx2+2] . ">\n";
+                        $transcriptLine .= "null\t-\t-\t<-\t->";
+                        $transcriptLine .= "\t<=>\t" . $overlapRegion2[3*$idx2] . "\t" . $overlapRegion2[3*$idx2+1] . "\t<" . $overlapRegion2[3*$idx2+2] . ">\n";
                     }
                 }
             }
             elsif ( $parameters{filter} eq "noFiltering" )  {
-		$transcriptLine = "null\t-\t-\t<-\t->\t<=>\tnull\t-\t-\t<-\t->\n";
+                $transcriptLine = "null\t-\t-\t<-\t->\t<=>\tnull\t-\t-\t<-\t->\n";
             }
 
             print OUT $line, $transcriptLine if ( $transcriptLine );
 
-	    if ( not $lastLine )  { $line = <RG>; }
-	    else { $line = $tmpLine; }
+            if ( not $lastLine )  { $line = <RG>; }
+            else { $line = $tmpLine; }
             print OUT $line if ( $transcriptLine );
             INNER: while ( $line =<RG> ) {
                 if ( $line =~ /^Group/ )  {
-		    $lastLine = $line;
-		    last INNER;
-		}
+                    $lastLine = $line;
+                    last INNER;
+                }
                 if ( $transcriptLine ) {
                     print OUT $line;
                     my @support = split ( /\s+/, $line );
@@ -299,19 +302,37 @@ sub convert
     my $bw = $parameters{bw};
     my $overlapCount = 0;
 
+    my $length = 0; my $longestTrans = 0;
+    my $allTrans = "";
     for ( my $idxBin = int ( $start / $bw ); $idxBin <= int ( $end / $bw ); $idxBin++ ) {
         ## get genes in the bin
         foreach my $gene ( @{$ref_bin->{$chr}{$strand}[$idxBin]} ) {
             # get transcripts for each gene
             next if ( ( $end < $ref_annotation->{gene_info}{$gene}{start} ) or ( $start > $ref_annotation->{gene_info}{$gene}{end} ) );
+
             foreach my $transID ( @{$ref_annotation->{gene_info}{$gene}{transcript}} ) {
-                next if ( ( $end < $ref_annotation->{transcript_info}{$transID}{start} ) or ( $start > $ref_annotation->{transcript_info}{$transID}{end} ) );
+                if ( ( $end < $ref_annotation->{transcript_info}{$transID}{start} ) or ( $start > $ref_annotation->{transcript_info}{$transID}{end} ) )  { next;  }
+                else {  
+                    if ( $parameters{collapseGene} and ( $ref_annotation->{transcript_info}{$transID}{length} > $length ) ) {
+                        my $longestTrans = $transID;
+                        $length = $ref_annotation->{transcript_info}{$transID}{length};
+                    }
+                }
+
+                $allTrans .= ";" . $transID;
+                if ( not $parameters{collapseGene} ) {
+                    $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $transID, $strand, $start, $end );
+                }
+            }
+
+            if ( $parameters{collapseGene} ) {
                 $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $transID, $strand, $start, $end );
             }
         }
     }
+    $allTrans =~ s/^;//;
 
-    return $overlapCount;
+    return $allTrans;
 }
 
 sub overlapTrans

@@ -148,7 +148,7 @@ sub readGTF_ensembl_new {
             if ( $type eq "gene_id" ) { $geneID = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "transcript_id" ) { $transcriptID = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "exon_id" ) { $exonID = substr ( $field, $index+2, -1 ); }
-            elsif ( $type eq "exon_number" ) { $exonNum = substr ( $field, $index+1 ); }
+            elsif ( $type eq "exon_number" ) { ( $exonNum ) = ( substr ( $field, $index+1 ) =~ /(\d+)/ ); }
         }
 =cut
         if ( ( $feature eq "gene" ) and ( $geneID ) ) {                   # not defined in ensembl
@@ -202,11 +202,13 @@ sub readGTF_ensembl_new {
             if ( not defined $transcript_info{$transcriptID} ) {
                 $transcript_info{$transcriptID}{gene} = $geneID;
                 $transcript_info{$transcriptID}{start} = $start; $transcript_info{$transcriptID}{end} = $end;
+                $transcript_info{$transcriptID}{length} = $end - $start;
                 push @{$gene_info{$geneID}{transcript}}, $transcriptID;
             }
             else {
                 $transcript_info{$transcriptID}{start} = $start if ( $start < $transcript_info{$transcriptID}{start} ); 
                 $transcript_info{$transcriptID}{end} = $end if ( $end > $transcript_info{$transcriptID}{end} );
+                $transcript_info{$transcriptID}{length} += ($end - $start);
             }
 
             $transcript_info{$transcriptID}{exon}{$exonNum} = $exonID;
