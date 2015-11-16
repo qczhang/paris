@@ -135,9 +135,9 @@ sub loadReadGroup
             my ( $dgID, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $support ) = ( $line =~ /^Group (\d+) == position (.+)\(([+-])\):(\d+)-(\d+)\|(.+)\(([+-])\):(\d+)-(\d+), support (\d+)/ );
 
             my @overlapRegion1 = ();
-            my $allTrans = &convert ( \@overlapRegion1, $chr1, $strand1, $start1, $end1, $ref_annotation, $ref_bin, bw => $parameters{bw}, collapseGene => $parameters{collapseGene} );
+            &convert ( \@overlapRegion1, $chr1, $strand1, $start1, $end1, $ref_annotation, $ref_bin, bw => $parameters{bw}, collapseGene => $parameters{collapseGene} );
             my @overlapRegion2 = ();
-            my $allTrans = &convert ( \@overlapRegion2, $chr2, $strand2, $start2, $end2, $ref_annotation, $ref_bin, bw => $parameters{bw}, collapseGene => $parameters{collapseGene} );
+            &convert ( \@overlapRegion2, $chr2, $strand2, $start2, $end2, $ref_annotation, $ref_bin, bw => $parameters{bw}, collapseGene => $parameters{collapseGene} );
 
             my $transcriptLine = "";
             if ( ( scalar(@overlapRegion1) ) and ( scalar (@overlapRegion2) ) ) {
@@ -302,14 +302,14 @@ sub convert
     my $bw = $parameters{bw};
     my $overlapCount = 0;
 
-    my $length = 0; my $longestTrans = 0;
-    my $allTrans = "";
     for ( my $idxBin = int ( $start / $bw ); $idxBin <= int ( $end / $bw ); $idxBin++ ) {
         ## get genes in the bin
         foreach my $gene ( @{$ref_bin->{$chr}{$strand}[$idxBin]} ) {
             # get transcripts for each gene
             next if ( ( $end < $ref_annotation->{gene_info}{$gene}{start} ) or ( $start > $ref_annotation->{gene_info}{$gene}{end} ) );
 
+            my $length = 0; my $longestTrans = 0;
+            #my $allTrans = "";
             foreach my $transID ( @{$ref_annotation->{gene_info}{$gene}{transcript}} ) {
                 if ( ( $end < $ref_annotation->{transcript_info}{$transID}{start} ) or ( $start > $ref_annotation->{transcript_info}{$transID}{end} ) )  { next;  }
                 else {  
@@ -319,20 +319,20 @@ sub convert
                     }
                 }
 
-                $allTrans .= ";" . $transID;
+                #$allTrans .= ";" . $transID;
                 if ( not $parameters{collapseGene} ) {
                     $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $transID, $strand, $start, $end );
                 }
             }
 
             if ( $parameters{collapseGene} ) {
-                $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $transID, $strand, $start, $end );
+                $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $transID, $strand, $start, $end, geneID => $gene );
             }
+            #$allTrans =~ s/^;//;
         }
     }
-    $allTrans =~ s/^;//;
 
-    return $allTrans;
+    return $overlapCount;
 }
 
 sub overlapTrans
@@ -340,6 +340,7 @@ sub overlapTrans
     my $ref_overlapRegion = shift;
     my $ref_annotation = shift; my $transID = shift;
     my $strand = shift; my $absStart = shift; my $absEnd = shift; 
+    my %parameters = @_;
 
     my $transcript = $ref_annotation->{transcript_info}{$transID};
     my $numExon = scalar ( keys %{$transcript->{exon}} );
@@ -375,7 +376,8 @@ sub overlapTrans
 
             my $overlapString1 = join ( "\t", $relStart, $relEnd );
             my $overlapString2 = join ( "\t", $absStartInExon, $absEndInExon );
-            push @{$ref_overlapRegion}, $transID;
+            if ( defined $parameters{geneID} ) { push @{$ref_overlapRegion}, $parameters{geneID}; }
+            else { push @{$ref_overlapRegion}, $transID; }
             push @{$ref_overlapRegion}, $overlapString1;
             push @{$ref_overlapRegion}, $overlapString2;
             $overlapCount++;
