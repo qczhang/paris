@@ -115,11 +115,11 @@ sub readGTF_ensembl_new {
 
     my $lineCount = 0;
     open ( GTF, $gtfFile ) or die ( "Error in reading GTF file $gtfFile!\n" );
-    print STDERR "read genomic annotations from file: $gtfFile\n\t", `date` if ( $parameters{verbose} );
+    print "read genomic annotations from file: $gtfFile\n\t", `date`;
     my $geneID = "";  my $transcriptID = "";  my $exonID = "";  my $exonNum = 0;
     while ( my $line = <GTF> ) {
         next if ( $line =~ /^#/ ); chomp $line;
-        $lineCount++; print STDERR "  line: $lineCount\n" if ( ( $parameters{verbose} ) and ( $lineCount % 100000 == 0 ) );
+        $lineCount++; print "  line: $lineCount\n" if ( ( $parameters{verbose} ) and ( $lineCount % 100000 == 0 ) );
 
         # 1     nonsense_mediated_decay     stop_codon      4782680     4782682     .       -       0       
         # gene_id "ENSMUSG00000033845"; transcript_id "ENSMUST00000045689"; exon_number "2"; 
