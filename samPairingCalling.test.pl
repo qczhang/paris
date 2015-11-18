@@ -1,4 +1,4 @@
-#! /usr/bin/perl
+#shift! /usr/bin/perl
 #
 use strict;
 use warnings;
@@ -40,8 +40,8 @@ my %global = (
 ##--------------------------------------------------
 #
 
-use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z $opt_c $opt_v $opt_r $opt_m );
-&getopts('hVDi:j:s:o:g:a:t:l:p:z:v:c:rm');
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_j $opt_s $opt_o $opt_g $opt_a $opt_t $opt_l $opt_p $opt_z $opt_c $opt_v $opt_r $opt_e $opt_m );
+&getopts('hVDi:j:s:o:g:a:t:l:p:z:v:c:e:rm');
 
 my $usage = <<_EOH_;
 ## --------------------------------------
@@ -66,10 +66,11 @@ my $usage = <<_EOH_;
   -v    minimum number of overlap nucleotides to define a read duplex (default: 5)
   -c 	scoring method (harmonic or geometric. Default: harmonic)
 
-  -r    remove redundancy in input sam or junctions (default: no)
+  -e    estimate read count in a duplex arm by pileup or count ("pileup|count", default: pileup)
   -n    generate a NG tag for IGV visualization in the output sam file of support reads (default: no)
 
-  -m	allow one read in multiple duplex groups
+  -r    remove redundancy in input sam or junctions (default: no)
+  -m	allow one read in multiple duplex groups (default: no)
 _EOH_
 ;
 
@@ -79,12 +80,14 @@ _EOH_
 sub main
 {
     my %parameters = &init();
+    print Dumper \%parameters;
 
     my $samFileList = $parameters{samFiles};
     my $chiasticFileList = $parameters{chiasticFiles};
     my $chiasticSamFileList = $parameters{chiasticSamFiles};
     my $outputFile = $parameters{output};
     my $supportSamFile = $outputFile;  $supportSamFile =~ s/txt$//;  $supportSamFile .= "sam";
+    my $supportReadFile = $outputFile;  $supportReadFile =~ s/txt$//;  $supportReadFile .= "reads";
 
     $global{annotation} = loadGTF ( $parameters{annotationFile} ) if ( defined $parameters{annotationFile} );
     $global{genomeSeq} = loadGenome ( $parameters{genomeFile} ) if ( defined $parameters{genomeFile} );
@@ -110,8 +113,8 @@ sub main
     finalizeReads (\%read, \%readmap, \%duplexGroup );
 
     if ( $parameters{genNGtag} )   {  nonOverlappingTag ( \%read );  }
-    printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => 1 );
-    calcScore ( \%duplexGroup, $supportSamFile, $parameters{genomeFile} );
+    printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => $supportReadFile );
+    calcScore ( \%duplexGroup, $supportSamFile, $parameters{genomeFile}, $supportReadFile, coverage => $parameters{coverage} );
     printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, minSupport => $parameters{minSupport}, method => $parameters{scoringMethod} );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
@@ -146,6 +149,8 @@ sub init {
     else { $parameters{minOverlap} = 5; }
     if ( defined $opt_c ) { $parameters{scoringMethod} = $opt_c; }
     else { $parameters{scoringMethod} = "harmonic"; }
+    if ( defined $opt_e ) { $parameters{coverage} = $opt_e; }
+    else { $parameters{coverage} = "pileup"; }
     if ( defined $opt_r ) { $parameters{removeRedundancy} = 1; }
     else { $parameters{removeRedundancy} = 0; }
     if ( defined $opt_m ) { $parameters{multipleDG} = 1; }
@@ -367,7 +372,7 @@ sub genPairClusterFromJunctionFile
             print "\tvalid line: $validCount\n\t", `date`;
         }
 
-        last if ( ( $opt_D ) and ( $lineCount > 100 ) );
+	last if ( ( $opt_D ) and ( $lineCount > 100 ) );
         my ( $duplexStemLine, $duplexIntervalLine ) = genPairClusterFromOneJunction ( $line, $ref_read, minOverhang => $parameters{minOverhang} );
         if ( $duplexStemLine ) {
             print DG $duplexStemLine;
@@ -401,7 +406,7 @@ sub encodeJunction
         else {
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
-            last if ( ( $opt_D ) and ( $lineCount > 100 ) );
+	    last if ( ( $opt_D ) and ( $lineCount > 100 ) );
 
             my @data = split ( /\t/, $line );
             $global{readUniqCount}++;
@@ -446,7 +451,7 @@ sub uniqJunction
             $lineCount++;
             if ( $lineCount % 100000 == 0 ) { print "line: $lineCount\n", `date`; }
 
-            last if ( ( $opt_D ) and ( $lineCount > 100 ) );
+	    last if ( ( $opt_D ) and ( $lineCount > 100 ) );
             my @data = split ( /\t/, $line );
             if ( ( $data[10] != $pos1 ) or ( $data[12] != $pos2 ) 
                     or ( $data[11] ne $cigar1 ) or ( $data[13] ne $cigar2 ) 
@@ -624,10 +629,10 @@ sub genDuplexGroup
     while ( my $line = <BED> ) {
         next if ( $line =~ /^#/ ); chomp $line;
         $lineCount++; if ( $lineCount % 10000 == 0 ) { 
-            print "line: $lineCount,";
-            print "\tfirstPossible: $firstPossible,";
-            print "\tduplexCount: $duplexCount\n",;
-            print "\t", `date`; }
+		print "line: $lineCount,";
+		print "\tfirstPossible: $firstPossible,";
+		print "\tduplexCount: $duplexCount\n",;
+		print "\t", `date`; }
         my ( $chr1, $start1, $end1, $id1, $score1, $strand1, $chr2, $start2, $end2, $id2, $score2, $strand2 ) = split ( /\t/, $line );
 
         my $lastDGoverlapped = 0;
@@ -641,7 +646,7 @@ sub genDuplexGroup
                 addRead2DuplexGroup ( $ref_duplexGroup->{$idx}, $id1, $start1, $end1,$start2, $end2 );
                 if ( not defined $ref_read->{$id1}{clique} ) { $ref_read->{$id1}{clique} = $idx; }
                 else { $ref_read->{$id1}{clique} .= ";" . $idx; }
-                last if ( not $parameters{multipleDG} ); 
+		last if ( not $parameters{multipleDG} ); 
             }
             elsif ( $overlapped == -1 ) {    ## the start of this read is beyond the firstPossible duplex, so no need to check firstPossible in the future
                 if ( not $lastDGoverlapped ) {
@@ -1180,7 +1185,7 @@ sub finalizeDuplexGroup
 
             $lastRead = $reads[$idx];
             $ref_clique->{$dg}{support}++;
-            $ref_read->{$reads[$idx]}{clique} .= ";" . $dg;
+	    $ref_read->{$reads[$idx]}{clique} .= ";" . $dg;
             if ( not $ref_read->{$reads[$idx]}{name} =~ /;/ ) { 
                 if ( $ref_readmap->{$ref_read->{$reads[$idx]}{name}} > 0 ) {
                     if ( ( $ref_read->{$reads[$idx]}{1}{chr} eq $ref_read->{$reads[$idx]}{2}{chr} ) and ( $ref_read->{$reads[$idx]}{1}{strand} eq $ref_read->{$reads[$idx]}{2}{strand} ) ) {
@@ -1224,22 +1229,22 @@ sub finalizeReads
 
     my $duplexGroup = 0;
     foreach my $name ( keys %{$ref_readmap} ) {
-        next if ( $ref_readmap->{$name} > 0 );
+	next if ( $ref_readmap->{$name} > 0 );
 
         $duplexGroup++;
-        my $readID = 0 - $ref_readmap->{$name};
+	my $readID = 0 - $ref_readmap->{$name};
         my @cliques = sort { $a <=> $b } ( split ( /;/, $ref_read->{$readID}{clique} ) );
         my $lastClique = -1;
-        my $cliqueString = "";
+	my $cliqueString = "";
         for ( my $idx = 0; $idx < scalar ( @cliques ); $idx++ ) {
             next if ( $cliques[$idx] == $lastClique );
             next if ( defined $ref_clique->{$cliques[$idx]}{collapsedTo} );
 
-            if ( not $cliqueString ) { $cliqueString = $cliques[$idx]; }
-            else { $cliqueString .= ";" . $cliques[$idx]; }
+	    if ( not $cliqueString ) { $cliqueString = $cliques[$idx]; }
+	    else { $cliqueString .= ";" . $cliques[$idx]; }
             $lastClique = $cliques[$idx];
         }
-        $ref_read->{$readID}{clique} = $cliqueString;
+	$ref_read->{$readID}{clique} = $cliqueString;
     }
 
     1;
@@ -1269,13 +1274,18 @@ sub printDuplexGroup
         next if ( defined $ref_clique->{$dg}{collapsedTo} );
 
         $duplexGroup++;
-        my $score = supportScore ( $ref_clique->{$dg}{support}, $ref_clique->{$dg}{cov}{1}, $ref_clique->{$dg}{cov}{2}, $parameters{method} );
+        my $left = ( ( defined $ref_clique->{$dg}{cov}{1} ) and ( $ref_clique->{$dg}{cov}{1} > $ref_clique->{$dg}{support} ) ) ? $ref_clique->{$dg}{cov}{1} : $ref_clique->{$dg}{support};
+        my $right = ( ( defined $ref_clique->{$dg}{cov}{2} ) and ( $ref_clique->{$dg}{cov}{2} > $ref_clique->{$dg}{support} ) ) ? $ref_clique->{$dg}{cov}{2} : $ref_clique->{$dg}{support};
+        my $score = supportScore ( $ref_clique->{$dg}{support}, $left, $right, $parameters{method} );
+        #my $score = supportScore ( $ref_clique->{$dg}{support}, $ref_clique->{$dg}{cov}{1}, $ref_clique->{$dg}{cov}{2}, $parameters{method} );
+
         print OUT "Group $dg == position "; 
         print OUT $ref_clique->{$dg}{chr1}, "(", $ref_clique->{$dg}{strand1}, "):";
         print OUT $ref_clique->{$dg}{start1}, "-", $ref_clique->{$dg}{end1};
         print OUT "|", $ref_clique->{$dg}{chr2}, "(", $ref_clique->{$dg}{strand2}, "):";
         print OUT $ref_clique->{$dg}{start2}, "-", $ref_clique->{$dg}{end2};
-        print OUT ", support $ref_clique->{$dg}{support}, left $ref_clique->{$dg}{cov}{1}, right $ref_clique->{$dg}{cov}{2}, score $score.\n----\n";
+        print OUT ", support $ref_clique->{$dg}{support}, left $left, right $right, score $score.\n----\n";
+        #print OUT ", support $ref_clique->{$dg}{support}, left $ref_clique->{$dg}{cov}{1}, right $ref_clique->{$dg}{cov}{2}, score $score.\n----\n";
 
         my @reads = split ( /;/, $ref_clique->{$dg}{reads} );
         for ( my $idx = 0; $idx < scalar ( @reads ); $idx++ ) {
@@ -1374,17 +1384,18 @@ sub printSupportSam
     my $ref_read = shift; my $ref_readmap = shift;
     my %parameters = @_;
 
-    if ( $parameters{outputRead} ) {
-        my $readFile = $outputFile . ".reads";
-        open ( OUT, ">$readFile" ) or die "Cannot open file $readFile for writing!\n";
+    if ( defined $parameters{outputRead} ) {
+        open ( READ, ">$parameters{outputRead}" ) or die "Cannot open file $parameters{outputRead} for writing!\n";
+=cut
         for ( my $rid = 1; $rid <= $global{readUniqCount}; $rid++ ) {
             next if ( not defined $ref_read->{$rid}{1}{chr} );
-            print OUT join ( "\t", $rid, $ref_read->{$rid}{1}{chr}, $ref_read->{$rid}{1}{start}, $ref_read->{$rid}{1}{end}, $ref_read->{$rid}{1}{strand} ), "\t";
-            print OUT join ( "\t", $ref_read->{$rid}{2}{chr}, $ref_read->{$rid}{2}{start}, $ref_read->{$rid}{2}{end}, $ref_read->{$rid}{2}{strand} ), "\t";
-            print OUT join ( "\t", $ref_read->{$rid}{collapsedFrom}, $ref_read->{$rid}{collapsedTo}, $ref_read->{$rid}{name} );
-            if ( defined $ref_read->{$rid}{clique} ) {  print OUT "\t", $ref_read->{$rid}{clique}, "\n";  }  else  { print OUT "\t.\n";  }
+            print READ join ( "\t", $rid, $ref_read->{$rid}{1}{chr}, $ref_read->{$rid}{1}{start}, $ref_read->{$rid}{1}{end}, $ref_read->{$rid}{1}{strand} ), "\t";
+            print READ join ( "\t", $ref_read->{$rid}{2}{chr}, $ref_read->{$rid}{2}{start}, $ref_read->{$rid}{2}{end}, $ref_read->{$rid}{2}{strand} ), "\t";
+            print READ join ( "\t", $ref_read->{$rid}{collapsedFrom}, $ref_read->{$rid}{collapsedTo}, $ref_read->{$rid}{name} );
+            if ( defined $ref_read->{$rid}{clique} ) {  print READ "\t", $ref_read->{$rid}{clique}, "\n";  }  else  { print READ "\t.\n";  }
         }
-        close OUT;
+        close READ;
+=cut
     }
 
     print "Output supportting alignments to SAM file $outputFile. \t", `date`;
@@ -1405,28 +1416,42 @@ sub printSupportSam
                 my $readID = 0 - $ref_readmap->{$data[0]};
 
                 my $realReadID = ( defined $ref_read->{$readID}{collapsedTo} ) ? $ref_read->{$readID}{collapsedTo} : $readID;
+
+		my $skip = 0;
                 if ( defined $ref_read->{$realReadID}{cigar} ) { 
                     my ( $isChiastic, $cigar ) = split ( /:/, $ref_read->{$realReadID}{cigar} );
                     my @data = split ( /\t/, $line );
                     if ( $isChiastic == 0 ) { 
-                        next if ( ( $data[1] == 256 ) or ( $data[1] == 16 ) );
+			next if ( ( $data[1] == 256 ) or ( $data[1] == 16 ) );
                         $data[1] = ( $data[1] & 3839 );
-                        $data[5] = $cigar;
-                    }
+                    	$data[5] = $cigar;
+		    }
                     elsif ( $isChiastic == 1 ) {
-                        next if ( ( $data[1] == 0 ) or ( $data[1] == 272 ) );
+			next if ( ( $data[1] == 0 ) or ( $data[1] == 272 ) );
                         $data[1] = ( $data[1] & 3839 );
                         $data[9] = reverseRead ( $data[5], $data[9] );
                         $data[10] = reverseRead ( $data[5], $data[10] );
-                        $data[5] = $cigar;
+                    	$data[5] = $cigar;
                     } 
+                    elsif ( $isChiastic == 2 ) {
+		    }
                     print OUT join ( "\t", @data, "XG:i:$isChiastic" );
                 }
                 else { print OUT $line, "\tXG:i:0"; }
-
                 print OUT "\tDG:i:$ref_read->{$realReadID}{clique}";
                 if ( defined $ref_read->{$readID}{ngTag} ) { print OUT "\tNG:i:$ref_read->{$readID}{ngTag}"; }
                 print OUT "\n";
+
+		if ( $parameters{outputRead} ) {
+		    print READ join ( "\t", $ref_read->{$realReadID}{1}{chr}, $ref_read->{$realReadID}{1}{start}, $ref_read->{$realReadID}{1}{end}, $ref_read->{$realReadID}{name}, $realReadID, $ref_read->{$realReadID}{1}{strand} ), "\n";
+		    print READ join ( "\t", $ref_read->{$realReadID}{2}{chr}, $ref_read->{$realReadID}{2}{start}, $ref_read->{$realReadID}{2}{end}, $ref_read->{$realReadID}{name}, $realReadID, $ref_read->{$realReadID}{2}{strand} ), "\n";
+=cut
+		    print READ join ( "\t", $realReadID, $ref_read->{$realReadID}{1}{chr}, $ref_read->{$realReadID}{1}{start}, $ref_read->{$realReadID}{1}{end}, $ref_read->{$realReadID}{1}{strand} ), "\t";
+		    print READ join ( "\t", $ref_read->{$realReadID}{2}{chr}, $ref_read->{$realReadID}{2}{start}, $ref_read->{$realReadID}{2}{end}, $ref_read->{$realReadID}{2}{strand} ), "\t";
+		    print READ join ( "\t", $ref_read->{$realReadID}{collapsedFrom}, $ref_read->{$realReadID}{collapsedTo}, $ref_read->{$realReadID}{name} );
+		    if ( defined $ref_read->{$realReadID}{clique} ) {  print READ "\t", $ref_read->{$realReadID}{clique}, "\n";  }  else  { print READ "\t.\n";  }
+=cut
+		}
 
                 $validCount++; 
             }
@@ -1437,6 +1462,7 @@ sub printSupportSam
 
     }
     close OUT;
+    close READ if ( $parameters{outputRead} );
     print "$validCount alignments output to file $outputFile.\n\tTime: ", `date`, "\n";
 
     return ( $lineCount, $validCount );
@@ -1449,6 +1475,8 @@ sub calcScore
     my $ref_clique = shift;
     my $supportSam = shift;
     my $genomeSizeFile = shift;
+    my $supportReadFile = shift;
+    my %parameters = @_;
 
     my $duplexGroup = 0;
     my $posBed = "tmp.$$.cluster.pos.bed";
@@ -1466,23 +1494,31 @@ sub calcScore
         next if ( defined $ref_clique->{$dg}{collapsedTo} );
 
         $duplexGroup++;
-        if ( $ref_clique->{$dg}{strand1} eq "+" ) { print POS join ( "\t", $ref_clique->{$dg}{chr1}, $ref_clique->{$dg}{start1}, $ref_clique->{$dg}{end1}, $ref_clique->{$dg}{strand1}, $dg, "1" ), "\n"; }
-        else { print NEG join ( "\t", $ref_clique->{$dg}{chr1}, $ref_clique->{$dg}{start1}, $ref_clique->{$dg}{end1}, $ref_clique->{$dg}{strand1}, $dg, "1" ), "\n"; }
-        if ( $ref_clique->{$dg}{strand2} eq "+" ) { print POS join ( "\t", $ref_clique->{$dg}{chr2}, $ref_clique->{$dg}{start2}, $ref_clique->{$dg}{end2}, $ref_clique->{$dg}{strand2}, $dg, "2" ), "\n"; }
-        else { print NEG join ( "\t", $ref_clique->{$dg}{chr2}, $ref_clique->{$dg}{start2}, $ref_clique->{$dg}{end2}, $ref_clique->{$dg}{strand2}, $dg, "2" ), "\n"; }
+        if ( $ref_clique->{$dg}{strand1} eq "+" ) { print POS join ( "\t", $ref_clique->{$dg}{chr1}, $ref_clique->{$dg}{start1}, $ref_clique->{$dg}{end1}, $dg, "1", $ref_clique->{$dg}{strand1} ), "\n"; }
+        else { print NEG join ( "\t", $ref_clique->{$dg}{chr1}, $ref_clique->{$dg}{start1}, $ref_clique->{$dg}{end1}, $dg, "1", $ref_clique->{$dg}{strand1} ), "\n"; }
+        if ( $ref_clique->{$dg}{strand2} eq "+" ) { print POS join ( "\t", $ref_clique->{$dg}{chr2}, $ref_clique->{$dg}{start2}, $ref_clique->{$dg}{end2}, $dg, "2", $ref_clique->{$dg}{strand2} ), "\n"; }
+        else { print NEG join ( "\t", $ref_clique->{$dg}{chr2}, $ref_clique->{$dg}{start2}, $ref_clique->{$dg}{end2}, $dg, "2", $ref_clique->{$dg}{strand2} ), "\n"; }
     }
     close POS;
     close NEG;
 
     my $supportBam = "tmp.$$.support";
-    print STDERR `samtools view -bS $supportSam | samtools sort - $supportBam`;
-    print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand + > "tmp.$$.pos.genomeCov"`; 
-    print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand - > "tmp.$$.neg.genomeCov"`; 
+    if ( $parameters{coverage} eq "pileup" ) {
+	print STDERR `samtools view -bS $supportSam | samtools sort - $supportBam`;
+	print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand + > "tmp.$$.pos.genomeCov"`; 
+	print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand - > "tmp.$$.neg.genomeCov"`; 
 
-    print STDERR `bedtools intersect -wb -a "tmp.$$.pos.genomeCov" -b $posBed > "tmp.$$.pos.intCov"`; 
-    addCoverage ( "tmp.$$.pos.intCov", $ref_clique );
-    print STDERR `bedtools intersect -wb -a "tmp.$$.neg.genomeCov" -b $negBed > "tmp.$$.neg.intCov"`; 
-    addCoverage ( "tmp.$$.neg.intCov", $ref_clique );
+	print STDERR `bedtools intersect -wb -a "tmp.$$.pos.genomeCov" -b $posBed > "tmp.$$.pos.intCov"`; 
+	addCoverage ( "tmp.$$.pos.intCov", $ref_clique, coverage => "pileup" );
+	print STDERR `bedtools intersect -wb -a "tmp.$$.neg.genomeCov" -b $negBed > "tmp.$$.neg.intCov"`; 
+	addCoverage ( "tmp.$$.neg.intCov", $ref_clique, coverage => "pileup" );
+    }
+    elsif ( $parameters{coverage} eq "count" ) {
+	print STDERR `bedtools intersect -a $posBed -b $supportReadFile -c -s > "tmp.$$.pos.intCov"`; 
+	addCoverage ( "tmp.$$.pos.intCov", $ref_clique, coverage => "count" );
+	print STDERR `bedtools intersect -a $negBed -b $supportReadFile -c -s > "tmp.$$.neg.intCov"`; 
+	addCoverage ( "tmp.$$.neg.intCov", $ref_clique, coverage => "count" );
+    }
 
     1;
 }
@@ -1491,12 +1527,18 @@ sub addCoverage
 {
     my $intCovFile = shift;
     my $ref_clique = shift;
+    my %parameters = @_;
 
     open ( ICF, $intCovFile );
     while ( my $line = <ICF> ) {
         chomp $line;
         my @data = split ( /\t/, $line );
-        if ( ( not defined $ref_clique->{$data[8]} ) or ( not defined $ref_clique->{$data[8]}{cov}{$data[9]} ) or ( $data[3] > $ref_clique->{$data[8]}{cov}{$data[9]} ) ) { $ref_clique->{$data[8]}{cov}{$data[9]} =  $data[3]; }
+	if ( $parameters{coverage} eq "pileup" ) {
+	    if ( ( not defined $ref_clique->{$data[7]} ) or ( not defined $ref_clique->{$data[7]}{cov}{$data[8]} ) or ( $data[3] > $ref_clique->{$data[7]}{cov}{$data[8]} ) ) { $ref_clique->{$data[7]}{cov}{$data[8]} =  $data[3]; }
+	}
+	elsif ( $parameters{coverage} eq "count" ) {
+	    if ( ( not defined $ref_clique->{$data[3]} ) or ( not defined $ref_clique->{$data[3]}{cov}{$data[4]} ) or ( $data[6] > $ref_clique->{$data[3]}{cov}{$data[4]} ) ) { $ref_clique->{$data[3]}{cov}{$data[4]} =  $data[6]; }
+	}
     }
     close ICF;
 
