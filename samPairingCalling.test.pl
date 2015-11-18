@@ -114,7 +114,7 @@ sub main
 
     if ( $parameters{genNGtag} )   {  nonOverlappingTag ( \%read );  }
     printSupportSam ( $supportSamFile, $allSupportSam, \%read, \%readmap, outputRead => $supportReadFile );
-    calcScore ( \%duplexGroup, $supportSamFile, $parameters{genomeFile}, $supportReadFile, coverage => $parameters{coverage} );
+    calcScore ( \%duplexGroup, $supportSamFile, $parameters{genomeSizeFile}, $supportReadFile, coverage => $parameters{coverage} );
     printDuplexGroup ( $outputFile, \%duplexGroup, \%read, \%readmap, minSupport => $parameters{minSupport}, method => $parameters{scoringMethod} );
 
 #    sortCluster ( minSupport => $parameters{minSupport}, outputBed => 1, inputSam => $allSupportSam, genomeSizeFile => $parameters{genomeSizeFile} );
@@ -1502,11 +1502,9 @@ sub calcScore
     close POS;
     close NEG;
 
-    my $supportBam = "tmp.$$.support";
     if ( $parameters{coverage} eq "pileup" ) {
-	print STDERR `samtools view -bS $supportSam | samtools sort - $supportBam`;
-	print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand + > "tmp.$$.pos.genomeCov"`; 
-	print STDERR `bedtools genomecov -ibam $supportBam.bam -g $genomeSizeFile -bg -strand - > "tmp.$$.neg.genomeCov"`; 
+	print STDERR `bedtools genomecov -i $supportReadFile -g $genomeSizeFile -bg -strand + > "tmp.$$.pos.genomeCov"`; 
+	print STDERR `bedtools genomecov -i $supportReadFile -g $genomeSizeFile -bg -strand - > "tmp.$$.neg.genomeCov"`; 
 
 	print STDERR `bedtools intersect -wb -a "tmp.$$.pos.genomeCov" -b $posBed > "tmp.$$.pos.intCov"`; 
 	addCoverage ( "tmp.$$.pos.intCov", $ref_clique, coverage => "pileup" );
