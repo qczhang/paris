@@ -47,6 +47,7 @@ _EOH_
 
 sub main {
     my %parameters = &init();
+    print Dumper \%parameters if ( $opt_D );
 
     my $readGroupFile = $parameters{readGroupFile};
     my $supportSAMfile = $parameters{supportSamFile};
@@ -55,10 +56,10 @@ sub main {
     my %readGroup = ();
     my %supportReads = ();
 
-    my $ref_annotation = readGTF_ensembl_new ( $parameters{annotationFile} );
+    my $ref_annotation = readGTF_ensembl_new ( $parameters{annotationFile}, verbose => 1 );
     my $ref_bin = binize ( $ref_annotation->{gene_info}, $ref_annotation->{chr_size}, bw => $global{bw} );
 
-    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, filter => $parameters{filter} );
+    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, filter => $parameters{filter}, collapseGene => $parameters{collapseGene} );
     my $validReads = loadSupportSam ( $supportSAMfile, \%supportReads  );
 
     my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$parameters{filter}.sam/;
@@ -120,8 +121,8 @@ sub loadReadGroup
     my %readGroup_interval = ();
     open ( RG, $readGroupFile ) or die "Cannot open $readGroupFile for reading!\n";
     open ( OUT, ">$outputFile" ) or die "Cannot open $outputFile for writing!\n";
-    my $lastLine = "";
-    my $tmpLine = "";
+    my $lastLine = ""; my $tmpLine = "";
+    print "Read duplex group from $readGroupFile\n";
     OUTER: while ( my $line = <RG> ) {
         next if ( $line =~ /^#/ );
         if ( $lastLine ) {
@@ -131,7 +132,7 @@ sub loadReadGroup
 
         if ( $line =~ /^Group/ ) {
             $readGroupCount++;
-            last OUTER if ( ( $readGroupCount > 100 ) and $opt_D );
+            last OUTER if ( ( $readGroupCount > 5 ) and $opt_D );
             my ( $dgID, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $support ) = ( $line =~ /^Group (\d+) == position (.+)\(([+-])\):(\d+)-(\d+)\|(.+)\(([+-])\):(\d+)-(\d+), support (\d+)/ );
 
             my @overlapRegion1 = ();
@@ -196,8 +197,10 @@ sub loadReadGroup
                 }
                 if ( $transcriptLine ) {
                     print OUT $line;
+		    next if ( $line !~ /\S/ );
                     my @support = split ( /\s+/, $line );
                     if ( $support[0] ) { $ref_supportReads->{$support[0]}{sam} = ""; }
+                    else { $ref_supportReads->{$support[1]}{sam} = ""; }
                 }
             }
         }
@@ -221,7 +224,8 @@ sub loadSupportSam
 
     my $totalReads = 0; my $validReads = 0;
     my %pos_reads = ();
-    open ( SP, $supportSamFile );
+    open ( SP, $supportSamFile ) or die ( "Cannot open support alignment file $supportSamFile for reading!\n" );
+    print "Read support alignment file from $supportSamFile\n";
     while ( my $line = <SP> ) {
         my @data = split ( /\t/, $line );
         if ( defined $ref_supportReads->{$data[0]} ) {
@@ -252,10 +256,9 @@ sub printSupportSam
 
     open ( OUT, ">$outputFile" ) or die "Cannot open $outputFile for writing!\n";
     foreach my $readID ( keys %{$ref_supportReads} ) {
-        if ( $ref_supportReads->{$readID}{group} >=0 ) {
-            if ( not defined $ref_supportReads->{$readID}{sam} ) { print STDERR "Warning! Skipping unrecognized read $readID\n"; }
-            print OUT $ref_supportReads->{$readID}{sam};
-        }
+        if ( not defined $ref_supportReads->{$readID} )  {  next; }
+        elsif ( not $ref_supportReads->{$readID}{sam} )  {  print STDERR "Warning! Skipping no alignment read $readID\n";  next; }
+        print OUT $ref_supportReads->{$readID}{sam};
     }
     close OUT;
 
@@ -302,11 +305,14 @@ sub convert
     my $bw = $parameters{bw};
     my $overlapCount = 0;
 
+    my %geneID = ();
     for ( my $idxBin = int ( $start / $bw ); $idxBin <= int ( $end / $bw ); $idxBin++ ) {
         ## get genes in the bin
         foreach my $gene ( @{$ref_bin->{$chr}{$strand}[$idxBin]} ) {
             # get transcripts for each gene
             next if ( ( $end < $ref_annotation->{gene_info}{$gene}{start} ) or ( $start > $ref_annotation->{gene_info}{$gene}{end} ) );
+	    next if ( defined $geneID{$gene} );
+	    $geneID{$gene} = 1;
 
             my $length = 0; my $longestTrans = 0;
             #my $allTrans = "";
@@ -314,7 +320,7 @@ sub convert
                 if ( ( $end < $ref_annotation->{transcript_info}{$transID}{start} ) or ( $start > $ref_annotation->{transcript_info}{$transID}{end} ) )  { next;  }
                 else {  
                     if ( $parameters{collapseGene} and ( $ref_annotation->{transcript_info}{$transID}{length} > $length ) ) {
-                        my $longestTrans = $transID;
+                        $longestTrans = $transID;
                         $length = $ref_annotation->{transcript_info}{$transID}{length};
                     }
                 }
@@ -326,7 +332,7 @@ sub convert
             }
 
             if ( $parameters{collapseGene} ) {
-                $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $transID, $strand, $start, $end, geneID => $gene );
+                $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $longestTrans, $strand, $start, $end, geneID => $gene );
             }
             #$allTrans =~ s/^;//;
         }
