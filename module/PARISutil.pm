@@ -14,7 +14,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK );
 
 our $VERSION     = '0.01';
 our @EXPORT      = ();
-our @EXPORT_OK   = qw( readBED readIcSHAPE loadGenome readGTF_ensembl_new loadGTF parseCigar reverseComplement localAlignment );
+our @EXPORT_OK   = qw( readBED readIcSHAPE loadGenome readGTF_ensembl_new getExonLen get5primeLen get3primeLen getBioType parseCigar reverseComplement localAlignment );
 
 my $_debug = 0;
 my %enviroment = (
@@ -117,6 +117,7 @@ sub readGTF_ensembl_new {
     open ( GTF, $gtfFile ) or die ( "Error in reading GTF file $gtfFile!\n" );
     print "read genomic annotations from file: $gtfFile\n\t", `date`;
     my $geneID = "";  my $transcriptID = "";  my $exonID = "";  my $exonNum = 0;
+    my $geneType = "";  my $geneName = "";  my $transcriptType = "";  my $transcriptName = "";
     while ( my $line = <GTF> ) {
         next if ( $line =~ /^#/ ); chomp $line;
         $lineCount++; print "  line: $lineCount\n" if ( ( $parameters{verbose} ) and ( $lineCount % 100000 == 0 ) );
@@ -139,33 +140,65 @@ sub readGTF_ensembl_new {
         #  1142614 exon_number
         #   628052 exon_id
         #   432247 protein_id
+	$geneID = "";  $transcriptID = "";  $exonID = "";  $exonNum = 0;  $geneType = "";  $geneName = "";  $transcriptType = "";  $transcriptName = "";
+
         my ( $chr, $class, $feature, $start, $end, $score, $strand, $frame, $attribute ) = split ( /\t/, $line );
+	if ( not defined $chr_size{$chr} ) { $chr_size{$chr} = $end; }
+	else { $chr_size{$chr} = $end if ( $end > $chr_size{$chr} ); }
+
         my @data = split ( /; /, $attribute );
         foreach my $field ( @data ) {
             my $index = index ( $field, " " );
             next if ( $index <= 0 );
+
             my $type = substr ( $field, 0, $index ); 
             if ( $type eq "gene_id" ) { $geneID = substr ( $field, $index+2, -1 ); }
+            elsif ( $type eq "gene_type" ) { $geneType = substr ( $field, $index+2, -1 ); }
+            elsif ( $type eq "gene_name" ) { $geneName = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "transcript_id" ) { $transcriptID = substr ( $field, $index+2, -1 ); }
+            elsif ( $type eq "transcript_type" ) { $transcriptType = substr ( $field, $index+2, -1 ); }
+            elsif ( $type eq "transcript_name" ) { $transcriptName = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "exon_id" ) { $exonID = substr ( $field, $index+2, -1 ); }
             elsif ( $type eq "exon_number" ) { ( $exonNum ) = ( substr ( $field, $index+1 ) =~ /(\d+)/ ); }
         }
-=cut
         if ( ( $feature eq "gene" ) and ( $geneID ) ) {                   # not defined in ensembl
             if ( defined $gene_info{$geneID} ) { print STDERR "Warnning! skipping line $lineCount of repeated geneID: $geneID\n\t$line\n"; next; }
             $gene_info{$geneID}{chr} = $chr; $gene_info{$geneID}{strand} = $strand;
             $gene_info{$geneID}{start} = $start; $gene_info{$geneID}{end} = $end;
+            $gene_info{$geneID}{bioType} = $geneType; $gene_info{$geneID}{geneName} = $geneName;
         }
         if ( ( $feature eq "transcript" ) and ( $transcriptID ) ) {       # not defined in ensembl
             if ( not $geneID ) { print STDERR "Warnning! skipping line $lineCount of no geneID:\n\t$line\n"; next; }
             if ( defined $transcript_info{$transcriptID} ) 
                 { print STDERR "Warnning! skipping line $lineCount of repeated transcriptID: $transcriptID\n\t$line\n"; next; }
-            push @{$gene_info{$geneID}{transcript}}, $transcriptID;
             $transcript_info{$transcriptID}{gene} = $geneID;
             $transcript_info{$transcriptID}{start} = $start; $transcript_info{$transcriptID}{end} = $end;
+            $transcript_info{$transcriptID}{bioType} = $transcriptType;
+            $transcript_info{$transcriptID}{transcriptName} = $transcriptName;
+
+            if ( not defined $gene_info{$geneID} ) {
+                $gene_info{$geneID}{chr} = $chr; $gene_info{$geneID}{strand} = $strand;
+                $gene_info{$geneID}{start} = $start; $gene_info{$geneID}{end} = $end;
+            }
+            else {
+                $gene_info{$geneID}{start} = $start if ( $start < $gene_info{$geneID}{start} ); 
+                $gene_info{$geneID}{end} = $end if ( $end > $gene_info{$geneID}{end} );
+            }
+            push @{$gene_info{$geneID}{transcript}}, $transcriptID;
+       }
+        if ( ( $feature eq "start_codon" ) and ( $transcriptID ) ) {
+            if ( not $geneID ) { print STDERR "Warnning! skipping line $lineCount of no geneID:\n\t$line\n"; next; }
+            if ( defined $transcript_info{$transcriptID}{startCodon} ) 
+                { print STDERR "Warnning! skipping line $lineCount of repeated start_codon of transcriptID: $transcriptID\n\t$line\n"; next; }
+            $transcript_info{$transcriptID}{startCodon} = $start;
         }
-=cut
-        if ( $feature eq "exon" ) {                   # so far we only deal with exon
+        if ( ( $feature eq "stop_codon" ) and ( $transcriptID ) ) {
+            if ( not $geneID ) { print STDERR "Warnning! skipping line $lineCount of no geneID:\n\t$line\n"; next; }
+            if ( defined $transcript_info{$transcriptID}{stopCodon} ) 
+                { print STDERR "Warnning! skipping line $lineCount of repeated stop_codon of transcriptID: $transcriptID\n\t$line\n"; next; }
+            $transcript_info{$transcriptID}{stopCodon} = $start;
+        }
+        if ( $feature eq "exon" ) {                   
             if ( not $geneID ) { print STDERR "Warnning! skipping line $lineCount of no geneID:\n\t$line\n"; next; }
             if ( not $transcriptID ) { print STDERR "Warnning! skipping line $lineCount of no transcriptID:\n\t$line\n"; next; }
             if ( not $exonID ) { print STDERR "Warnning! skipping line $lineCount of no exonID:\n\t$line\n"; next; }
@@ -187,9 +220,6 @@ sub readGTF_ensembl_new {
                     { print STDERR "Warnning! in consistent location annotation of gene $geneID in $line\n"; next; }
             }
 
-            if ( not defined $chr_size{$chr} ) { $chr_size{$chr} = $end; }
-            else { $chr_size{$chr} = $end if ( $end > $chr_size{$chr} ); }
-
             if ( not defined $gene_info{$geneID} ) {
                 $gene_info{$geneID}{chr} = $chr; $gene_info{$geneID}{strand} = $strand;
                 $gene_info{$geneID}{start} = $start; $gene_info{$geneID}{end} = $end;
@@ -202,13 +232,15 @@ sub readGTF_ensembl_new {
             if ( not defined $transcript_info{$transcriptID} ) {
                 $transcript_info{$transcriptID}{gene} = $geneID;
                 $transcript_info{$transcriptID}{start} = $start; $transcript_info{$transcriptID}{end} = $end;
-                $transcript_info{$transcriptID}{length} = $end - $start;
+                $transcript_info{$transcriptID}{length} = $end - $start + 1;
+                $transcript_info{$transcriptID}{exonNum} = 1;
                 push @{$gene_info{$geneID}{transcript}}, $transcriptID;
             }
             else {
                 $transcript_info{$transcriptID}{start} = $start if ( $start < $transcript_info{$transcriptID}{start} ); 
                 $transcript_info{$transcriptID}{end} = $end if ( $end > $transcript_info{$transcriptID}{end} );
-                $transcript_info{$transcriptID}{length} += ($end - $start);
+                $transcript_info{$transcriptID}{length} += ($end - $start + 1);
+                $transcript_info{$transcriptID}{exonNum}++;
             }
 
             $transcript_info{$transcriptID}{exon}{$exonNum} = $exonID;
@@ -224,9 +256,99 @@ sub readGTF_ensembl_new {
         exon_info           => \%exon_info 
     };
 }
+sub get5primeLen 
+{
+    my $ref_annotation = shift;
+    my $transID = shift;
+
+    my $fivePrimeLen = 0;
+    my $geneID = $ref_annotation->{transcript_info}{$transID}{gene};
+    if ( $ref_annotation->{gene_info}{$geneID}{strand} eq "+" ) {
+        my $TSS = $ref_annotation->{transcript_info}{$transID}{startCodon};
+        for ( my $idxExon = 1; $idxExon <= $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon++ ) {
+            if ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} >= $TSS ) {
+		$fivePrimeLen += $TSS - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start}; 
+                last;
+            }
+            else {
+		$fivePrimeLen += $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1; 
+            }
+        }
+    }
+    elsif ( $ref_annotation->{gene_info}{$geneID}{strand} eq "-" ) {
+        my $TSS = $ref_annotation->{transcript_info}{$transID}{startCodon} + 2;
+        for ( my $idxExon = 1; $idxExon <= $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon++ ) {
+            if ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} < $TSS ) {
+		$fivePrimeLen += $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $TSS; 
+                last;
+            }
+            else {
+		$fivePrimeLen += $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1; 
+            }
+        }
+    }
+
+    return $fivePrimeLen;
+}
+
+sub get3primeLen 
+{
+    my $ref_annotation = shift;
+    my $transID = shift;
+
+    my $threePrimeLen = 0;
+    my $geneID = $ref_annotation->{transcript_info}{$transID}{gene};
+    if ( $ref_annotation->{gene_info}{$geneID}{strand} eq "-" ) {
+        my $TES = $ref_annotation->{transcript_info}{$transID}{stopCodon};
+        for ( my $idxExon = $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon >= 1; $idxExon-- ) {
+            if ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} >= $TES ) {
+		$threePrimeLen += $TES - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start}; 
+                last;
+            }
+            else {
+		$threePrimeLen += $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1; 
+            }
+        }
+    }
+    elsif ( $ref_annotation->{gene_info}{$geneID}{strand} eq "+" ) {
+        my $TES = $ref_annotation->{transcript_info}{$transID}{stopCodon} + 2;
+        for ( my $idxExon = $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon >= 1; $idxExon-- ) {
+            if ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} <= $TES ) {
+		$threePrimeLen += $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $TES; 
+                last;
+            }
+            else {
+		$threePrimeLen += $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1; 
+            }
+        }
+    }
+
+    return $threePrimeLen;
+}
 
 
-sub loadGTF 
+sub getBioType 
+{
+    my $ref_annotation = shift;
+    my $featureID = shift;
+    my %parameters = @_;
+
+    my $featureType = ( defined $parameters{featureType} ) ? $parameters{featureType} : "transcript_info";
+    my $biotypeString = "NULL";
+    if ( defined $ref_annotation->{$featureType}{$featureID} ) {
+        if ( defined $ref_annotation->{$featureType}{$featureID}{bioType} ) {
+            $biotypeString = $ref_annotation->{$featureType}{$featureID}{bioType};
+        }
+
+        $biotypeString =~ s/^_//; $biotypeString =~ s/_/ /g;
+        $biotypeString =~ s/PSEUDO/pseudogene/;
+        $biotypeString =~ s/^gene$/unclassified_gene/i; $biotypeString =~ s/unclassified gene$/unclassified_gene/i; $biotypeString =~ s/ gene$//;
+    }
+
+    return $biotypeString;
+}
+
+sub loadGTF_interval
 {
     my $gtfFile = shift;
     my %parameters = @_;

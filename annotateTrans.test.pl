@@ -10,7 +10,7 @@ use Getopt::Std;
 
 #
 use lib "module";
-use PARISutil qw( &readGTF_ensembl_new );
+use PARISutil qw( &readGTF_ensembl_new &getBioType &get5primeLen &get3primeLen &getExonLen );
 
 ##--------------------------------------------------
 #
@@ -31,12 +31,13 @@ my $usage = <<_EOH_;
 ## --------------------------------------
 annotate with transcriptome annotation
 Command:
-$0 -i read_group_file -s support_sam -o output_annotated_file
+$0 -i read_group_file -o output_annotated_file
 # what it is:
  -i     input read group file
- -s     input support sam file
  -o     output annotated file
+
 # more options:
+ -s     input support sam file
  -a     annotation GTF file
  -f     filter ("onlyIntra|onlyInter|requireBothAnnotation|requireAnnotation")
  -c     collapse transcripts of the same gene
@@ -50,7 +51,6 @@ sub main {
     print Dumper \%parameters if ( $opt_D );
 
     my $readGroupFile = $parameters{readGroupFile};
-    my $supportSAMfile = $parameters{supportSamFile};
     my $outputFile = $parameters{output};
 
     my %readGroup = ();
@@ -60,12 +60,14 @@ sub main {
     my $ref_bin = binize ( $ref_annotation->{gene_info}, $ref_annotation->{chr_size}, bw => $global{bw} );
 
     my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, \%supportReads, $ref_annotation, $ref_bin, bw => $global{bw}, filter => $parameters{filter}, collapseGene => $parameters{collapseGene} );
-    my $validReads = loadSupportSam ( $supportSAMfile, \%supportReads  );
+    if ( defined $parameters{supportSamFile} ) {
+    	my $supportSAMfile = $parameters{supportSamFile};
+	my $validReads = loadSupportSam ( $supportSAMfile, \%supportReads  );
+	my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$parameters{filter}.sam/;
+	printSupportSam ( \%supportReads, $filteredSAMfile );
+    }
 
-    my $filteredSAMfile = $supportSAMfile; $filteredSAMfile =~ s/.sam$/.$parameters{filter}.sam/;
-    printSupportSam ( \%supportReads, $filteredSAMfile );
-
-1;
+    1;
 }
 
 ## ----------------------------------
@@ -73,7 +75,7 @@ sub init
 {
     my %parameters = ();
 
-    die $usage if ( $opt_h || ( not $opt_i ) || ( not $opt_s ) || ( not $opt_o ) );
+    die $usage if ( $opt_h || ( not $opt_i ) || ( not $opt_o ) );
     $opt_V = 0 if ( not defined $opt_V );
     $opt_D = 0 if ( not defined $opt_D );
 
@@ -332,7 +334,8 @@ sub convert
             }
 
             if ( $parameters{collapseGene} ) {
-                $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $longestTrans, $strand, $start, $end, geneID => $gene );
+                $overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $longestTrans, $strand, $start, $end );
+                #$overlapCount += &overlapTrans ( $ref_overlapRegion, $ref_annotation, $longestTrans, $strand, $start, $end, geneID => $gene );
             }
             #$allTrans =~ s/^;//;
         }
