@@ -115,4 +115,4 @@ my.vioplot( log10(size$genomeSize+1), log10(size$transSize+1), names = c ( "geno
 axis(side=2,at=0:6,labels=10^(0:6))
 axis(side=1,at=1:2,labels=c("genomic distance","transcriptomic distance"))
 title ( "Distribution of stem duplex distance" );
-
+dev.off();

@@ -16,7 +16,9 @@ my $_debug = 0;
 
 my %environment = (
     annotationFile => "/Share/home/zhangqf/cliff/paris/data/ref/gencode.v21.chr_patch_hapl_scaff.annotation.gtf",
-    sizeRscript    => "scripts/sizeDist.violinplot.R"
+    sizeRscript    => "scripts/sizeDist.violinplot.R",
+    countRscript   => "scripts/countDist.pieChart.R",
+    preDefinedRNAs => [ "5UTR", "start_codon", "CDS", "stop_codon", "3UTR", "protein coding", "lincRNA", "retained intron", "nonsense mediated decay", "processed pseudogene", "processed transcript", "snoRNA", "snRNA", "rRNA", "Mt rRNA", "misc RNA", "antisense" ]
 );
 
 use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_o $opt_a $opt_f );
@@ -43,7 +45,7 @@ sub main {
     my %parameters = &init();
     print Dumper \%parameters if ( $opt_D );
 
-    my $ref_annotation = undef;
+#   my $ref_annotation = undef;
     my $ref_annotation = readGTF_ensembl_new ( $parameters{annotationFile}, verbose => 1 );
 
     my %readGroup = ();
@@ -51,9 +53,7 @@ sub main {
     my $outputFile = $parameters{output};
     my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, $ref_annotation, filter => $parameters{filter} );
 
-    my $sizeDist = $outputFile;  $sizeDist =~ s/.txt//; $sizeDist .= ".size.pdf";
-
-    plotSizeDistribution ( $outputFile, $sizeDist, filter => $parameters{filter}, countCutoff => 100 );
+    plotDistribution ( $outputFile, filter => $parameters{filter}, countCutoff => 100 );
 
     1;
 }
@@ -78,13 +78,12 @@ sub init
     return ( %parameters );
 }
 
-sub plotSizeDistribution
+sub plotDistribution
 { 
     my $dataFile = shift;
-    my $sizeDist = shift;
     my %parameters = @_;
 
-    my $rdat = $dataFile;  $rdat =~ s/.txt//; $rdat .= ".dat";
+    my $distData = $dataFile;  $distData =~ s/.txt//; $distData .= ".dist.dat";
     my %class_gDist = ();
     my %class_tDist = ();
     open ( DATA, $dataFile );
@@ -93,13 +92,12 @@ sub plotSizeDistribution
         chomp $line;
         my @data = split ( /\t/, $line );
         next if ( ( $data[11] eq "null" ) or ( $data[11] ne $data[15] ) );
-        #print RD $data[18], "\t", abs($data[10]), "\t", abs($data[19]), "\n";
         push ( @{$class_gDist{$data[18]}}, abs($data[10]) );
         push ( @{$class_tDist{$data[18]}}, abs($data[19]) );
     }
     close DATA;
 
-    open ( RD, ">$rdat" );
+    open ( RD, ">$distData" );
     print RD "type\tgenomeSize\ttransSize\n";
     foreach my $class ( keys %class_gDist ) {
         if ( scalar (@{$class_gDist{$class}}) < $parameters{countCutoff} ) {
@@ -114,7 +112,28 @@ sub plotSizeDistribution
         }
     }
     close RD;
-    print STDERR `Rscript $environment{sizeRscript} $rdat $sizeDist`;
+    my $sizeDist = $dataFile;  $sizeDist =~ s/.txt//; $sizeDist .= ".size.pdf";
+    print STDERR `Rscript $environment{sizeRscript} $distData $sizeDist`;
+
+    my $countData = $dataFile;  $countData =~ s/.txt//; $countData .= ".count.dat";
+    open ( CT, ">$countData" );
+    print CT "type\tcount\n";
+    my %class_count = ();
+    foreach my $class ( @{$environment{preDefinedRNAs}} ) {
+        if ( $class eq "protein coding" ) { print CT "protein coding (not resolved)\t", scalar (@{$class_gDist{$class}} ), "\n"; }
+        else { print CT $class, "\t", scalar (@{$class_gDist{$class}} ), "\n"; }
+        $class_count{$class} = scalar (@{$class_gDist{$class}} );
+    }
+    my $otherCount = 0;
+    foreach my $class ( keys %class_gDist ) {
+        if ( not defined $class_count{$class} ) {
+            $otherCount += scalar (@{$class_gDist{$class}} );
+        }
+    }
+    print CT "others\t$otherCount\n";
+    close CT;
+    my $countDist = $dataFile;  $countDist =~ s/.txt//; $countDist .= ".count.pdf";
+    print STDERR `Rscript $environment{countRscript} $countData $countDist`;
 
     1;
 }
@@ -198,11 +217,14 @@ sub parseFeature
         my $fivePrimeLength = get5primeLen ( $ref_annotation, $transID );
         my $threePrimeLength = get3primeLen ( $ref_annotation, $transID );
         my $CDSlength = $ref_annotation->{transcript_info}{$transID}{length} - $fivePrimeLength - $threePrimeLength;
-        if ( $end <= $fivePrimeLength )  { $bioType = "5UTR"; }
-        elsif ( ( $start <= ( $fivePrimeLength + 3 ) ) and ( $end > $fivePrimeLength ) )  { $bioType = "start_codon"; }
-        elsif ( ( $start > ( $fivePrimeLength + 3 ) ) and ( $end <= ( $fivePrimeLength + $CDSlength ) ) )  { $bioType = "CDS"; }
-        elsif ( ( $start <= ( $fivePrimeLength + $CDSlength + 3 ) ) and ( $end > ( $fivePrimeLength + $CDSlength ) ) )  { $bioType = "stop_codon"; }
-        elsif ( $start > ( $fivePrimeLength + $CDSlength + 3 ) )  { $bioType = "3UTR"; }
+
+        if ( $fivePrimeLength and $threePrimeLength and $CDSlength ) {
+            if ( $end <= $fivePrimeLength )  { $bioType = "5UTR"; }
+            elsif ( ( $start <= ( $fivePrimeLength + 3 ) ) and ( $end > $fivePrimeLength ) )  { $bioType = "start_codon"; }
+            elsif ( ( $start > ( $fivePrimeLength + 3 ) ) and ( $end <= ( $fivePrimeLength + $CDSlength ) ) )  { $bioType = "CDS"; }
+            elsif ( ( $start <= ( $fivePrimeLength + $CDSlength + 3 ) ) and ( $end > ( $fivePrimeLength + $CDSlength ) ) )  { $bioType = "stop_codon"; }
+            elsif ( $start > ( $fivePrimeLength + $CDSlength + 3 ) )  { $bioType = "3UTR"; }
+        }
     }
 
     return $bioType;
