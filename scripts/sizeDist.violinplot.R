@@ -1,5 +1,8 @@
+args<-commandArgs(TRUE);
+
+size <- read.table ( args[1], header=TRUE, sep="\t");
+
 library(vioplot);
-size <- read.table ( "size.txt", header=TRUE, sep="\t");
 
 my.vioplot <- function (x, ..., range = 1.5, h = NULL, ylim = NULL, names = NULL,
     horizontal = FALSE, col = "magenta", border = "black", lty = 1,
@@ -105,7 +108,11 @@ my.vioplot <- function (x, ..., range = 1.5, h = NULL, ylim = NULL, names = NULL
         q1 = q1, q3 = q3))
 }
 
-#png ( "gini.png", width = 400, height = 600 );
-pdf ("size.pdf", height=8, width=6);
-my.vioplot( log10(size$genomeSize+1), log10(size$transSize+1), names = c ( "genomic distance", "transcriptomic distance" ), col=c ( "red", "blue" ) );
+
+pdf ( args[2], height=8, width=6);
+plot(0:1,0:1,type="n",xlim=c(0.5,2.5),ylim=range(log10(c(size$genomeSize+1,size$transSize+1))), axes=FALSE,ann=FALSE)
+my.vioplot( log10(size$genomeSize+1), log10(size$transSize+1), names = c ( "genomic distance", "transcriptomic distance" ), col=c ( "red", "blue" ), add=TRUE );
+axis(side=2,at=0:6,labels=10^(0:6))
+axis(side=1,at=1:2,labels=c("genomic distance","transcriptomic distance"))
 title ( "Distribution of stem duplex distance" );
+
