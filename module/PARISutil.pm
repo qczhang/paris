@@ -262,6 +262,8 @@ sub get5primeLen
     my $transID = shift;
 
     my $fivePrimeLen = 0;
+    if ( not defined $ref_annotation->{transcript_info}{$transID}{startCodon} )  { return $fivePrimeLen };
+
     my $geneID = $ref_annotation->{transcript_info}{$transID}{gene};
     if ( $ref_annotation->{gene_info}{$geneID}{strand} eq "+" ) {
         my $TSS = $ref_annotation->{transcript_info}{$transID}{startCodon};
@@ -297,6 +299,8 @@ sub get3primeLen
     my $transID = shift;
 
     my $threePrimeLen = 0;
+    if ( not defined $ref_annotation->{transcript_info}{$transID}{stopCodon} )  { return $threePrimeLen };
+
     my $geneID = $ref_annotation->{transcript_info}{$transID}{gene};
     if ( $ref_annotation->{gene_info}{$geneID}{strand} eq "-" ) {
         my $TES = $ref_annotation->{transcript_info}{$transID}{stopCodon};
