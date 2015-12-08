@@ -86,28 +86,33 @@ sub plotDistribution
     my $distData = $dataFile;  $distData =~ s/.txt//; $distData .= ".dist.dat";
     my %class_gDist = ();
     my %class_tDist = ();
+    my %class_id = ();
     open ( DATA, $dataFile );
+    my $lineCount = 0;
     while ( my $line = <DATA> ) {
         next if ( $line =~ /^#/ );
         chomp $line;
         my @data = split ( /\t/, $line );
+	$lineCount++;
+        next if ( ( not $data[18] ) or ( not $data[10] ) or ( not $data[19] ) );
         next if ( ( $data[11] eq "null" ) or ( $data[11] ne $data[15] ) );
         push ( @{$class_gDist{$data[18]}}, abs($data[10]) );
         push ( @{$class_tDist{$data[18]}}, abs($data[19]) );
+        push ( @{$class_id{$data[18]}}, $data[11] );
     }
     close DATA;
 
     open ( RD, ">$distData" );
-    print RD "type\tgenomeSize\ttransSize\n";
+    print RD "type\tgenomeSize\ttransSize\ttransID\n";
     foreach my $class ( keys %class_gDist ) {
         if ( scalar (@{$class_gDist{$class}}) < $parameters{countCutoff} ) {
             for ( my $idx = 0; $idx < scalar ( @{$class_gDist{$class}} ); $idx++ )  {
-                print RD "others\t", $class_gDist{$class}[$idx], "\t", $class_tDist{$class}[$idx], "\n";
+                print RD "others\t", $class_gDist{$class}[$idx], "\t", $class_tDist{$class}[$idx], "\t", $class_id{$class}[$idx], "\n";
             }
         }
         else {
             for ( my $idx = 0; $idx < scalar ( @{$class_gDist{$class}} ); $idx++ )  {
-                print RD $class, "\t", $class_gDist{$class}[$idx], "\t", $class_tDist{$class}[$idx], "\n";
+                print RD $class, "\t", $class_gDist{$class}[$idx], "\t", $class_tDist{$class}[$idx], "\t", $class_id{$class}[$idx], "\n";
             }
         }
     }
