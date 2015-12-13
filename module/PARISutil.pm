@@ -275,7 +275,7 @@ sub getExonID
                 last;
             }
             else {
-                push @exonID, $ref_annotation->{transcript_info}{$transID}{exonNum};
+                push @exonID, $idxExon;
             }
         }
     }
@@ -288,7 +288,7 @@ sub getExonID
                 last;
             }
             else {
-                push @exonID, $ref_annotation->{transcript_info}{$transID}{exonNum};
+                push @exonID, $idxExon;
             }
         }
     }
