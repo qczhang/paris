@@ -256,6 +256,46 @@ sub readGTF_ensembl_new {
         exon_info           => \%exon_info 
     };
 }
+
+sub getExonID
+{
+    my $ref_annotation = shift;
+    my $transID = shift;
+    my $start = shift;
+    my $end = shift;
+
+    my @exonID = ();
+    my $geneID = $ref_annotation->{transcript_info}{$transID}{gene};
+    if ( $ref_annotation->{gene_info}{$geneID}{strand} eq "+" ) {
+        for ( my $idxExon = 1; $idxExon <= $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon++ ) {
+            if ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} < $start ) {
+                next;
+            }
+            elsif ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} > $end ) {
+                last;
+            }
+            else {
+                push @exonID, $ref_annotation->{transcript_info}{$transID}{exonNum};
+            }
+        }
+    }
+    elsif ( $ref_annotation->{gene_info}{$geneID}{strand} eq "-" ) {
+        for ( my $idxExon = 1; $idxExon <= $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon++ ) {
+            if ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} > $end ) {
+                next;
+            }
+            elsif ( $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} < $start ) {
+                last;
+            }
+            else {
+                push @exonID, $ref_annotation->{transcript_info}{$transID}{exonNum};
+            }
+        }
+    }
+
+    return \@exonID;
+}
+
 sub get5primeLen 
 {
     my $ref_annotation = shift;
