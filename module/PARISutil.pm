@@ -14,7 +14,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK );
 
 our $VERSION     = '0.01';
 our @EXPORT      = ();
-our @EXPORT_OK   = qw( readBED readIcSHAPE loadGenome readGTF_ensembl_new getExonLen get5primeLen get3primeLen getBioType parseCigar reverseComplement localAlignment );
+our @EXPORT_OK   = qw( readBED readIcSHAPE loadGenome readGTF_ensembl_new getExonID get5primeLen get3primeLen getBioType parseCigar reverseComplement localAlignment );
 
 my $_debug = 0;
 my %enviroment = (

@@ -8,7 +8,7 @@ use Getopt::Std;
 
 #
 use lib "module";
-use PARISutil qw( &readGTF_ensembl_new &getBioType &get5primeLen &get3primeLen &getExonLen );
+use PARISutil qw( &readGTF_ensembl_new &getExonID &getBioType &get5primeLen &get3primeLen );
 
 ##--------------------------------------------------
 #
@@ -176,11 +176,22 @@ sub loadReadGroup
                 my @data = split ( /\t/, $line );  my $transSpan = ".";
                 if ( $data[0] eq $data[6] ) { $transSpan = ( $data[7] > $data[1] ) ? ( $data[8] - $data[1] ) : ( $data[2] - $data[7] ); }
                 my $bioType1 = "null";  my $bioType2 = "null";
+                my $ref_exonID1 = [];  my $ref_exonID2 = [];
                 $data[1] = "." if ( $data[1] eq "-" ); $data[2] = "." if ( $data[2] eq "-" ); $data[7] = "." if ( $data[7] eq "-" ); $data[8] = "." if ( $data[8] eq "-" );
-                if ( $data[0] =~ /ENS/ ) { $bioType1 = parseFeature ( $ref_annotation, $data[0], $data[1], $data[2] ); }
-                if ( $data[6] =~ /ENS/ ) { $bioType2 = parseFeature ( $ref_annotation, $data[6], $data[7], $data[8] ); }
+                if ( $data[0] =~ /ENS/ ) { 
+                    $bioType1 = parseFeature ( $ref_annotation, $data[0], $data[1], $data[2] ); 
+                    $ref_exonID1 = getExonID ( $ref_annotation, $data[0], $data[3], $data[4] ); 
+                }
+                if ( $data[6] =~ /ENS/ ) { 
+                    $bioType2 = parseFeature ( $ref_annotation, $data[6], $data[7], $data[8] ); 
+                    $ref_exonID2 = getExonID ( $ref_annotation, $data[6], $data[9], $data[10] ); 
+                }
                 print OUT join ( "\t", $dgID, $support, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $genomeSpan ), "\t"; 
-                print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1, $data[6], $data[7], $data[8], $bioType2, $transSpan ), "\n"; 
+                print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1 );
+                print OUT join ( ",", @{$ref_exonID1} );
+                print OUT join ( "\t", $data[6], $data[7], $data[8], $bioType2 ); 
+                print OUT join ( ",", @{$ref_exonID2} );
+                print OUT "\t", $transSpan, "\n"; 
             }
 
             INNER: while ( $line =<RG> ) {
@@ -189,10 +200,15 @@ sub loadReadGroup
                     if ( $data[0] eq $data[6] ) { $transSpan = ( $data[7] > $data[1] ) ? ( $data[8] - $data[1] ) : ( $data[2] - $data[7] ); }
                     $data[1] = "." if ( $data[1] eq "-" ); $data[2] = "." if ( $data[2] eq "-" ); $data[7] = "." if ( $data[7] eq "-" ); $data[8] = "." if ( $data[8] eq "-" );
                     my $bioType1 = "null";  my $bioType2 = "null";
+                    my $ref_exonID1 = [];  my $ref_exonID2 = [];
                     if ( $data[0] =~ /ENS/ ) { $bioType1 = parseFeature ( $ref_annotation, $data[0], $data[1], $data[2] ); }
                     if ( $data[6] =~ /ENS/ ) { $bioType2 = parseFeature ( $ref_annotation, $data[6], $data[7], $data[8] ); }
                     print OUT join ( "\t", $dgID, $support, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $genomeSpan ), "\t"; 
-                    print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1, $data[6], $data[7], $data[8], $bioType2, $transSpan ), "\n"; 
+                    print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1 );
+                    print OUT join ( ",", @{$ref_exonID1} );
+                    print OUT join ( "\t", $data[6], $data[7], $data[8], $bioType2 ); 
+                    print OUT join ( ",", @{$ref_exonID2} );
+                    print OUT "\t", $transSpan, "\n"; 
                 }
                 elsif ( $line =~ /^Group/ )  {
                     $lastLine = $line;

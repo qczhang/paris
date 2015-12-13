@@ -10,7 +10,7 @@ use Getopt::Std;
 
 #
 use lib "module";
-use PARISutil qw( &readGTF_ensembl_new &getBioType &get5primeLen &get3primeLen &getExonLen );
+use PARISutil qw( &readGTF_ensembl_new &getBioType &get5primeLen &get3primeLen );
 
 ##--------------------------------------------------
 #
