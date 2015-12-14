@@ -8,7 +8,7 @@ use Getopt::Std;
 
 #
 use lib "module";
-use PARISutil qw( &readGTF_ensembl_new &getExonID &getBioType &get5primeLen &get3primeLen );
+use PARISutil qw( &readGTF_ensembl_new &getExonID &getBioType &get5primeLen &get3primeLen &getCDSLen );
 
 ##--------------------------------------------------
 #
@@ -17,6 +17,7 @@ my $_debug = 0;
 my %environment = (
     annotationFile => "/Share/home/zhangqf/cliff/paris/data/ref/gencode.v21.chr_patch_hapl_scaff.annotation.gtf",
     exonHeatMapSize => 6,
+    heatmapRscript    => "scripts/heatmap.R",
     sizeRscript    => "scripts/sizeDist.violinplot.R",
     countRscript   => "scripts/countDist.pieChart.R",
     preDefinedRNAs => [ "5UTR", "start_codon", "CDS", "stop_codon", "3UTR", "protein coding", "lincRNA", "retained intron", "nonsense mediated decay", "processed pseudogene", "processed transcript", "snoRNA", "snRNA", "rRNA", "Mt rRNA", "misc RNA", "antisense" ]
@@ -47,14 +48,14 @@ sub main {
     print Dumper \%parameters if ( $opt_D );
 
 #   my $ref_annotation = undef;
-    #my $ref_annotation = readGTF_ensembl_new ( $parameters{annotationFile}, verbose => 1 );
+    my $ref_annotation = readGTF_ensembl_new ( $parameters{annotationFile}, verbose => 1 );
 
     my %readGroup = ();
     my $readGroupFile = $parameters{readGroupFile};
     my $outputFile = $parameters{output};
-    #my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, $ref_annotation, filter => $parameters{filter} );
+    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, $ref_annotation, filter => $parameters{filter} );
 
-    plotDistribution ( $outputFile, filter => $parameters{filter}, countCutoff => 100, suppressSingleExon => 1, exonHeatMapSize => 4 );
+    plotDistribution ( $outputFile, filter => $parameters{filter}, countCutoff => 100, suppressSingleExon => 1, exonHeatMapSize => $environment{exonHeatMapSize} );
 
     1;
 }
@@ -92,8 +93,12 @@ sub plotDistribution
 
     my @heatMapExon = ();
     for ( my $idx1 = 0; $idx1 < $exonHeatMapSize; $idx1++ ) { for ( my $idx2 = 0; $idx2 < $exonHeatMapSize; $idx2++ ) { $heatMapExon[$idx1][$idx2] = 0; } }
+    my @avgHeatMapExon = ();
+    for ( my $idx1 = 0; $idx1 < $exonHeatMapSize; $idx1++ ) { for ( my $idx2 = 0; $idx2 < $exonHeatMapSize; $idx2++ ) { $avgHeatMapExon[$idx1][$idx2] = 1; } }
     my @heatMapProtein = ();
     for ( my $idx1 = 0; $idx1 < 5; $idx1++ ) { for ( my $idx2 = 0; $idx2 < 5; $idx2++ ) { $heatMapProtein[$idx1][$idx2] = 0; } }
+    my @avgHeatMapProtein = ();
+    for ( my $idx1 = 0; $idx1 < 5; $idx1++ ) { for ( my $idx2 = 0; $idx2 < 5; $idx2++ ) { $avgHeatMapProtein[$idx1][$idx2] = 1; } }
     my %proteinCode = ( "5UTR" => 0, "start_codon" => 1, "CDS" => 2, "stop_codon" => 3, "3UTR" => 4 );
 
     open ( DATA, $dataFile );
@@ -103,41 +108,66 @@ sub plotDistribution
         chomp $line;
         my @data = split ( /\t/, $line );
 	$lineCount++;
-        next if ( ( not $data[20] ) or ( not $data[10] ) or ( not $data[23] ) );
-        next if ( ( $data[11] eq "null" ) or ( $data[11] ne $data[17] ) );
-        push ( @{$class_gDist{$data[20]}}, abs($data[10]) );
-        push ( @{$class_tDist{$data[20]}}, abs($data[23]) );
-        push ( @{$class_id{$data[20]}}, $data[11] );
+        next if ( ( not defined $data[27] ) or ( not $data[27] ) );
+        next if ( ( $data[11] eq "null" ) or ( $data[11] ne $data[19] ) );
+        push ( @{$class_gDist{$data[22]}}, abs($data[10]) );
+        push ( @{$class_tDist{$data[22]}}, abs($data[27]) );
+        push ( @{$class_id{$data[22]}}, $data[11] );
 
-	if ( ( $data[16] >= $exonHeatMapSize ) and ( $data[22] >= $exonHeatMapSize ) ) {
-	    if ( $data[15] <= $halfExonHeatMapSize )  {
-	    	if ( $data[21] <= $halfExonHeatMapSize ) {
-	            $heatMapExon[$data[15]-1][$data[21]-1]++;
-	            $heatMapExon[$data[21]-1][$data[15]-1]++ if ( $data[21] != $data[15] );
+	if ( ( $data[18] >= $exonHeatMapSize ) and ( $data[26] >= $exonHeatMapSize ) ) {
+	    if ( $data[16] <= $halfExonHeatMapSize )  {
+	    	if ( $data[24] <= $halfExonHeatMapSize ) {
+	            $heatMapExon[$data[16]-1][$data[24]-1]++;
+	            if ( $data[24] != $data[16] ) {
+	            	$heatMapExon[$data[24]-1][$data[16]-1]++;
+			$avgHeatMapExon[$data[24]-1][$data[16]-1] += $data[17] + $data[25];
+			$avgHeatMapExon[$data[16]-1][$data[24]-1] += $data[17] + $data[25];
+		    }
+		    else {
+	                $avgHeatMapExon[$data[16]-1][$data[24]-1] += $data[17];
+		    }
 	    	}
-	    my $reverse2 = $data[22] - $data[21];
+	    my $reverse2 = $data[26] - $data[24];
 	    if ( $reverse2 < $halfExonHeatMapSize ) {
-		$heatMapExon[$data[15]-1][$exonHeatMapSize-1-$reverse2]++;
-		$heatMapExon[$exonHeatMapSize-1-$reverse2][$data[15]-1]++;
+		$heatMapExon[$data[16]-1][$exonHeatMapSize-1-$reverse2]++;
+		$avgHeatMapExon[$data[16]-1][$exonHeatMapSize-1-$reverse2] += $data[17] + $data[25];
+		$heatMapExon[$exonHeatMapSize-1-$reverse2][$data[16]-1]++;
+		$avgHeatMapExon[$exonHeatMapSize-1-$reverse2][$data[16]-1] += $data[17] + $data[25];
 	    }
 	}
-	my $reverse1 = $data[16] - $data[15];
+	my $reverse1 = $data[18] - $data[16];
 	if ( $reverse1 < $halfExonHeatMapSize ) {
-	    if ( $data[21] <= $halfExonHeatMapSize ) {
-	        $heatMapExon[$exonHeatMapSize-1-$reverse1][$data[21]-1]++;
-	        $heatMapExon[$data[21]-1][$exonHeatMapSize-1-$reverse1]++;
+	    if ( $data[24] <= $halfExonHeatMapSize ) {
+	        $heatMapExon[$exonHeatMapSize-1-$reverse1][$data[24]-1]++;
+	        $avgHeatMapExon[$exonHeatMapSize-1-$reverse1][$data[24]-1] += $data[17] + $data[25];
+	        $heatMapExon[$data[24]-1][$exonHeatMapSize-1-$reverse1]++;
+	        $avgHeatMapExon[$data[24]-1][$exonHeatMapSize-1-$reverse1] += $data[17] + $data[25];
 	    }
-	    my $reverse2 = $data[22] - $data[21];
+	    my $reverse2 = $data[26] - $data[24];
 	    if ( $reverse2 < $halfExonHeatMapSize ) {
 		$heatMapExon[$exonHeatMapSize-1-$reverse1][$exonHeatMapSize-1-$reverse2]++;
-		$heatMapExon[$exonHeatMapSize-1-$reverse2][$exonHeatMapSize-1-$reverse1]++ if ( $reverse1 != $reverse2 );
+		if ( $reverse1 != $reverse2 ) {
+		    $heatMapExon[$exonHeatMapSize-1-$reverse2][$exonHeatMapSize-1-$reverse1]++;
+		    $avgHeatMapExon[$exonHeatMapSize-1-$reverse2][$exonHeatMapSize-1-$reverse1] += $data[17] + $data[25];
+		    $avgHeatMapExon[$exonHeatMapSize-1-$reverse1][$exonHeatMapSize-1-$reverse2] += $data[17] + $data[25];
+		}
+		else {
+		    $avgHeatMapExon[$exonHeatMapSize-1-$reverse1][$exonHeatMapSize-1-$reverse2] += $data[17];
+		}
 	    }
 	}
 	}
 
-	if ( ( defined $proteinCode{$data[14]} ) and ( defined $proteinCode{$data[20]} ) ) {
-	    $heatMapProtein[$proteinCode{$data[14]}][$proteinCode{$data[20]}]++;
-	    $heatMapProtein[$proteinCode{$data[20]}][$proteinCode{$data[14]}]++ if ( $data[14] ne $data[20] );
+	if ( ( defined $proteinCode{$data[14]} ) and ( defined $proteinCode{$data[22]} ) ) {
+	    $heatMapProtein[$proteinCode{$data[14]}][$proteinCode{$data[22]}]++;
+	    if ( $data[14] ne $data[22] ) {
+	    	$heatMapProtein[$proteinCode{$data[22]}][$proteinCode{$data[14]}]++;
+	    	$avgHeatMapProtein[$proteinCode{$data[22]}][$proteinCode{$data[14]}] += $data[15] + $data[23];
+	    	$avgHeatMapProtein[$proteinCode{$data[14]}][$proteinCode{$data[22]}] += $data[15] + $data[23];
+	    }
+	    else {
+	    	$avgHeatMapProtein[$proteinCode{$data[14]}][$proteinCode{$data[22]}] += $data[15];
+	    }
 	}
     }
     close DATA;
@@ -150,6 +180,24 @@ sub plotDistribution
     open ( PC, ">$heatMapProteinData" );
     for ( my $idx1 = 0; $idx1 < 5; $idx1++ ) { print PC join ( "\t", @{$heatMapProtein[$idx1]} ), "\n"; }
     close PC;
+
+    for ( my $idx1 = 0; $idx1 < $exonHeatMapSize; $idx1++ ) { for ( my $idx2 = 0; $idx2 < $exonHeatMapSize; $idx2++ ) { $avgHeatMapExon[$idx1][$idx2] = 1000 * $heatMapExon[$idx1][$idx2] / $avgHeatMapExon[$idx1][$idx2]; } }
+    my $avgHeatMapExonData = $dataFile;  $avgHeatMapExonData =~ s/.txt//; $avgHeatMapExonData .= ".exon.norm.heatmap";
+    open ( EH, ">$avgHeatMapExonData" );
+    for ( my $idx1 = 0; $idx1 < $exonHeatMapSize; $idx1++ ) { print EH join ( "\t", @{$avgHeatMapExon[$idx1]} ), "\n"; }
+    close EH;
+    for ( my $idx1 = 0; $idx1 < 5; $idx1++ ) { for ( my $idx2 = 0; $idx2 < 5; $idx2++ ) { $avgHeatMapProtein[$idx1][$idx2] = 1000 * $heatMapProtein[$idx1][$idx2] / $avgHeatMapProtein[$idx1][$idx2]; } }
+    $avgHeatMapProtein[1][3] = 0;
+    $avgHeatMapProtein[3][1] = 0;
+    my $avgHeatMapProteinData = $dataFile;  $avgHeatMapProteinData =~ s/.txt//; $avgHeatMapProteinData .= ".pc.norm.heatmap";
+    open ( PC, ">$avgHeatMapProteinData" );
+    for ( my $idx1 = 0; $idx1 < 5; $idx1++ ) { print PC join ( "\t", @{$avgHeatMapProtein[$idx1]} ), "\n"; }
+    close PC;
+    my $heatMapExonPDF = $dataFile;  $heatMapExonPDF =~ s/.txt//; $heatMapExonPDF .= ".exon.heatmap.pdf";
+    my $heatMapPCPDF = $dataFile;  $heatMapPCPDF =~ s/.txt//; $heatMapPCPDF .= ".pc.heatmap.pdf";
+    my $avgHeatMapExonPDF = $dataFile;  $avgHeatMapExonPDF =~ s/.txt//; $avgHeatMapExonPDF .= ".exon.norm.heatmap.pdf";
+    my $avgHeatMapPCPDF = $dataFile;  $avgHeatMapPCPDF =~ s/.txt//; $avgHeatMapPCPDF .= ".pc.norm.heatmap.pdf";
+    print STDERR `Rscript $environment{heatmapRscript} $heatMapExonData $heatMapExonPDF $avgHeatMapExonData $avgHeatMapExonPDF $heatMapProteinData $heatMapPCPDF $avgHeatMapProteinData $avgHeatMapPCPDF`;
 
     my $distData = $dataFile;  $distData =~ s/.txt//; $distData .= ".dist.dat";
     open ( RD, ">$distData" );
@@ -224,43 +272,63 @@ sub loadReadGroup
 
             if ( $line =~ /ENS/ ) { 
 		chomp $line;
+		my $featureLen1 = ".";  my $featureLen2 = ".";  
                 my @data = split ( /\t/, $line );  my $transSpan = ".";
                 if ( $data[0] eq $data[6] ) { $transSpan = ( $data[7] > $data[1] ) ? ( $data[8] - $data[1] ) : ( $data[2] - $data[7] ); }
                 my $bioType1 = "null";  my $bioType2 = "null";
                 my $ref_exonID1 = [];  my $ref_exonID2 = [];
+                my $ref_exonLen1 = [];  my $ref_exonLen2 = [];
                 $data[1] = "." if ( $data[1] eq "-" ); $data[2] = "." if ( $data[2] eq "-" ); $data[7] = "." if ( $data[7] eq "-" ); $data[8] = "." if ( $data[8] eq "-" );
                 if ( $data[0] =~ /ENS/ ) { 
                     $bioType1 = parseFeature ( $ref_annotation, $data[0], $data[1], $data[2] ); 
-                    $ref_exonID1 = getExonID ( $ref_annotation, $data[0], substr ( $data[3], 1 ), substr ( $data[4], 0, -1) ); 
+		    if ( $bioType1 eq "5UTR" )  {  $featureLen1 = get5primeLen ( $ref_annotation, $data[0] );  }
+		    elsif ( $bioType1 eq "3UTR" )  {  $featureLen1 = get3primeLen ( $ref_annotation, $data[0] );  }
+		    elsif ( $bioType1 eq "CDS" )  {  $featureLen1 = getCDSLen ( $ref_annotation, $data[0] );  }
+		    elsif ( $bioType1 eq "start_codon" )  {  $featureLen1 = 3;  }
+		    elsif ( $bioType1 eq "stop_codon" )  {  $featureLen1 = 3;  }
+                    ( $ref_exonID1, $ref_exonLen1 ) = getExonID ( $ref_annotation, $data[0], substr ( $data[3], 1 ), substr ( $data[4], 0, -1) ); 
                 }
                 if ( $data[6] =~ /ENS/ ) { 
                     $bioType2 = parseFeature ( $ref_annotation, $data[6], $data[7], $data[8] ); 
-                    $ref_exonID2 = getExonID ( $ref_annotation, $data[6], substr ( $data[9], 1 ), substr ( $data[10], 0, -1) ); 
+		    if ( $bioType2 eq "5UTR" )  {  $featureLen2 = get5primeLen ( $ref_annotation, $data[6] );  }
+		    elsif ( $bioType2 eq "3UTR" )  {  $featureLen2 = get3primeLen ( $ref_annotation, $data[6] );  }
+		    elsif ( $bioType2 eq "CDS" )  {  $featureLen2 = getCDSLen ( $ref_annotation, $data[6] );  }
+		    elsif ( $bioType2 eq "start_codon" )  {  $featureLen2 = 3;  }
+		    elsif ( $bioType2 eq "stop_codon" )  {  $featureLen2 = 3;  }
+                    ( $ref_exonID2, $ref_exonLen2 ) = getExonID ( $ref_annotation, $data[6], substr ( $data[9], 1 ), substr ( $data[10], 0, -1) ); 
                 }
                 print OUT join ( "\t", $dgID, $support, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $genomeSpan ), "\t"; 
-                print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1, join ( ",", @{$ref_exonID1} ), $ref_annotation->{transcript_info}{$data[0]}{exonNum} ), "\t"; 
-                print OUT join ( "\t", $data[6], $data[7], $data[8], $bioType2, join ( ",", @{$ref_exonID2} ), $ref_annotation->{transcript_info}{$data[6]}{exonNum}, $transSpan ), "\n"; 
+                print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1, $featureLen1, join ( ",", @{$ref_exonID1} ), join ( ",", @{$ref_exonLen1} ), $ref_annotation->{transcript_info}{$data[0]}{exonNum} ), "\t"; 
+                print OUT join ( "\t", $data[6], $data[7], $data[8], $bioType2, $featureLen2, join ( ",", @{$ref_exonID2} ), join ( ",", @{$ref_exonLen2} ), $ref_annotation->{transcript_info}{$data[6]}{exonNum}, $transSpan ), "\n"; 
             }
 
             INNER: while ( $line =<RG> ) {
                 if ( $line =~ /ENS/ ) {
 		    chomp $line;
+		    my $featureLen1 = ".";  my $featureLen2 = ".";  
                     my @data = split ( /\t/, $line );  my $transSpan = ".";
                     if ( $data[0] eq $data[6] ) { $transSpan = ( $data[7] > $data[1] ) ? ( $data[8] - $data[1] ) : ( $data[2] - $data[7] ); }
                     $data[1] = "." if ( $data[1] eq "-" ); $data[2] = "." if ( $data[2] eq "-" ); $data[7] = "." if ( $data[7] eq "-" ); $data[8] = "." if ( $data[8] eq "-" );
                     my $bioType1 = "null";  my $bioType2 = "null";
                     my $ref_exonID1 = [];  my $ref_exonID2 = [];
+		    my $ref_exonLen1 = [];  my $ref_exonLen2 = [];
 		    if ( $data[0] =~ /ENS/ ) { 
 			$bioType1 = parseFeature ( $ref_annotation, $data[0], $data[1], $data[2] ); 
-			$ref_exonID1 = getExonID ( $ref_annotation, $data[0], substr ( $data[3], 1 ), substr ( $data[4], 0, -1) ); 
+			if ( $bioType1 eq "5UTR" )  {  $featureLen1 = get5primeLen ( $ref_annotation, $data[0] );  }
+			elsif ( $bioType1 eq "3UTR" )  {  $featureLen1 = get3primeLen ( $ref_annotation, $data[0] );  }
+			elsif ( $bioType1 eq "CDS" )  {  $featureLen1 = getCDSLen ( $ref_annotation, $data[0] );  }
+			( $ref_exonID1, $ref_exonLen1 ) = getExonID ( $ref_annotation, $data[0], substr ( $data[3], 1 ), substr ( $data[4], 0, -1) ); 
 		    }
 		    if ( $data[6] =~ /ENS/ ) { 
 			$bioType2 = parseFeature ( $ref_annotation, $data[6], $data[7], $data[8] ); 
-			$ref_exonID2 = getExonID ( $ref_annotation, $data[6], substr ( $data[9], 1 ), substr ( $data[10], 0, -1) ); 
+			if ( $bioType1 eq "5UTR" )  {  $featureLen2 = get5primeLen ( $ref_annotation, $data[6] );  }
+			elsif ( $bioType1 eq "3UTR" )  {  $featureLen2 = get3primeLen ( $ref_annotation, $data[6] );  }
+			elsif ( $bioType1 eq "CDS" )  {  $featureLen2 = getCDSLen ( $ref_annotation, $data[6] );  }
+			( $ref_exonID2, $ref_exonLen2 ) = getExonID ( $ref_annotation, $data[6], substr ( $data[9], 1 ), substr ( $data[10], 0, -1) ); 
 		    }
 		    print OUT join ( "\t", $dgID, $support, $chr1, $strand1, $start1, $end1, $chr2, $strand2, $start2, $end2, $genomeSpan ), "\t"; 
-		    print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1, join ( ",", @{$ref_exonID1} ), $ref_annotation->{transcript_info}{$data[0]}{exonNum} ), "\t"; 
-		    print OUT join ( "\t", $data[6], $data[7], $data[8], $bioType2, join ( ",", @{$ref_exonID2} ), $ref_annotation->{transcript_info}{$data[6]}{exonNum}, $transSpan ), "\n"; 
+		    print OUT join ( "\t", $data[0], $data[1], $data[2], $bioType1, $featureLen1, join ( ",", @{$ref_exonID1} ), join ( ",", @{$ref_exonLen1} ), $ref_annotation->{transcript_info}{$data[0]}{exonNum} ), "\t"; 
+		    print OUT join ( "\t", $data[6], $data[7], $data[8], $bioType2, $featureLen2, join ( ",", @{$ref_exonID2} ), join ( ",", @{$ref_exonLen2} ), $ref_annotation->{transcript_info}{$data[6]}{exonNum}, $transSpan ), "\n"; 
                 }
                 elsif ( $line =~ /^Group/ )  {
                     $lastLine = $line;

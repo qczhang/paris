@@ -14,7 +14,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK );
 
 our $VERSION     = '0.01';
 our @EXPORT      = ();
-our @EXPORT_OK   = qw( readBED readIcSHAPE loadGenome readGTF_ensembl_new getExonID get5primeLen get3primeLen getBioType parseCigar reverseComplement localAlignment );
+our @EXPORT_OK   = qw( readBED readIcSHAPE loadGenome readGTF_ensembl_new getExonID get5primeLen getCDSLen get3primeLen getBioType parseCigar reverseComplement localAlignment );
 
 my $_debug = 0;
 my %enviroment = (
@@ -265,6 +265,7 @@ sub getExonID
     my $end = shift;
 
     my @exonID = ();
+    my @exonLen = ();
     my $geneID = $ref_annotation->{transcript_info}{$transID}{gene};
     if ( $ref_annotation->{gene_info}{$geneID}{strand} eq "+" ) {
         for ( my $idxExon = 1; $idxExon <= $ref_annotation->{transcript_info}{$transID}{exonNum}; $idxExon++ ) {
@@ -276,6 +277,8 @@ sub getExonID
             }
             else {
                 push @exonID, $idxExon;
+		my $len = $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1;
+                push @exonLen, $len;
             }
         }
     }
@@ -289,11 +292,21 @@ sub getExonID
             }
             else {
                 push @exonID, $idxExon;
+		my $len = $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1;
+                push @exonLen, $len;
             }
         }
     }
 
-    return \@exonID;
+    return ( \@exonID, \@exonLen );
+}
+
+sub getCDSLen
+{
+    my $ref_annotation = shift;
+    my $transID = shift;
+
+    return $ref_annotation->{transcript_info}{$transID}{length} - get5primeLen ( $ref_annotation, $transID ) - get3primeLen ( $ref_annotation, $transID );
 }
 
 sub get5primeLen 
