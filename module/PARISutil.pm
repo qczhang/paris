@@ -301,6 +301,16 @@ sub getExonID
     return ( \@exonID, \@exonLen );
 }
 
+sub getExonLen
+{
+    my $ref_annotation = shift;
+    my $transID = shift;
+    my $idxExon = shift;
+
+    return $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{end} - $ref_annotation->{exon_info}{$ref_annotation->{transcript_info}{$transID}{exon}{$idxExon}}{start} + 1;
+}
+
+
 sub getCDSLen
 {
     my $ref_annotation = shift;
