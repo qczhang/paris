@@ -128,10 +128,7 @@ sub plotDistribution
 			my $exonID2 = $idx2;
                         if ( $idx2 > $halfExonHeatMapSize ) { $exonID2 = $data[18] + $idx2 - $exonHeatMapSize; }
                         if ( $idx1 == $idx2 ) { $avgHeatMapExon[$idx1][$idx1] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ); }
-                        else {
-                            $avgHeatMapExon[$idx1][$idx2] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ) + getExonLen ( $ref_annotation, $data[11], $exonID2 + 1 );
-                            $avgHeatMapExon[$idx2][$idx1] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ) + getExonLen ( $ref_annotation, $data[11], $exonID2 + 1 );
-                        }
+                        else { $avgHeatMapExon[$idx1][$idx2] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ) + getExonLen ( $ref_annotation, $data[11], $exonID2 + 1 ); }
                     }
                 }
             }
@@ -176,10 +173,7 @@ sub plotDistribution
                 for ( my $idx1 = 0; $idx1 < 5; $idx1++ ) {
                     for ( my $idx2 = 0; $idx2 < 5; $idx2++ ) {
                         if ( $idx1 == $idx2 )   {  $avgHeatMapProtein[$idx1][$idx2] += $pcLens[$idx1];  }
-                        else {
-                            $avgHeatMapProtein[$idx1][$idx2] += $pcLens[$idx1] + $pcLens[$idx2];
-                            $avgHeatMapProtein[$idx2][$idx1] += $pcLens[$idx1] + $pcLens[$idx2];
-                        }
+                        else { $avgHeatMapProtein[$idx1][$idx2] += $pcLens[$idx1] + $pcLens[$idx2]; }
                     }
                 }
             }
