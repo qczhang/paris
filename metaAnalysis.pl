@@ -8,7 +8,7 @@ use Getopt::Std;
 
 #
 use lib "module";
-use PARISutil qw( &readGTF_ensembl_new &getExonID &getBioType &get5primeLen &get3primeLen &getCDSLen );
+use PARISutil qw( &readGTF_ensembl_new &getExonID &getBioType &get5primeLen &get3primeLen &getCDSLen &getExonLen );
 
 ##--------------------------------------------------
 #
@@ -23,8 +23,8 @@ my %environment = (
     preDefinedRNAs => [ "5UTR", "start_codon", "CDS", "stop_codon", "3UTR", "protein coding", "lincRNA", "retained intron", "nonsense mediated decay", "processed pseudogene", "processed transcript", "snoRNA", "snRNA", "rRNA", "Mt rRNA", "misc RNA", "antisense" ]
 );
 
-use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_o $opt_a $opt_f );
-&getopts('hVDi:o:a:f:');
+use vars qw ($opt_h $opt_V $opt_D $opt_i $opt_o $opt_a $opt_f $opt_p );
+&getopts('hVDi:o:a:f:p');
 
 my $usage = <<_EOH_;
 ## --------------------------------------
@@ -38,6 +38,7 @@ $0 -i annotated_read_group_file -o tabulated_duplex_group_statistics_file
 # more options:
  -a     annotation GTF file
  -f     filter ("")
+ -p	plot figure only
 _EOH_
 ;
 
@@ -53,9 +54,11 @@ sub main {
     my %readGroup = ();
     my $readGroupFile = $parameters{readGroupFile};
     my $outputFile = $parameters{output};
-    my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, $ref_annotation, filter => $parameters{filter} );
+    if ( not $parameters{plotFigureOnly} ) {
+    	my $totalGroup = loadReadGroup ( $readGroupFile, $outputFile, $ref_annotation, filter => $parameters{filter} );
+    }
 
-    plotDistribution ( $outputFile, filter => $parameters{filter}, countCutoff => 100, suppressSingleExon => 1, exonHeatMapSize => $environment{exonHeatMapSize} );
+    plotDistribution ( $outputFile, $ref_annotation, filter => $parameters{filter}, countCutoff => 100, suppressSingleExon => 1, exonHeatMapSize => $environment{exonHeatMapSize} );
 
     1;
 }
@@ -76,6 +79,9 @@ sub init
     else  {  $parameters{annotationFile} = $environment{annotationFile};  }
     if ( defined $opt_f ) { $parameters{filter} = $opt_f; }
     else  {  $parameters{filter} = "noFiltering";  }
+
+    $parameters{plotFigureOnly} = 0;
+    if ( defined $opt_p ) {  $parameters{plotFigureOnly} = 1;  }
 
     return ( %parameters );
 }
@@ -116,13 +122,15 @@ sub plotDistribution
                 $exon_label{$data[11]} = 1;
 
                 for ( my $idx1 = 0; $idx1 < $exonHeatMapSize; $idx1++ ) {
-                    if ( $idx1 >= $halfExonHeatMapSize ) { $idx1 = $data[18] + $idx1 - $exonHeatMapSize; }
+		    my $exonID1 = $idx1;
+                    if ( $idx1 >= $halfExonHeatMapSize ) { $exonID1 = $data[18] + $idx1 - $exonHeatMapSize; }
                     for ( my $idx2 = 0; $idx2 < $exonHeatMapSize; $idx2++ ) {
-                        if ( $idx2 > $halfExonHeatMapSize ) { $idx2 = $data[18] + $idx2 - $exonHeatMapSize; }
-                        if ( $idx1 == $idx2 ) { $avgHeatMapExon[$idx1][$idx1] += getExonLen ( $data[11], $idx1 + 1 ); }
+			my $exonID2 = $idx2;
+                        if ( $idx2 > $halfExonHeatMapSize ) { $exonID2 = $data[18] + $idx2 - $exonHeatMapSize; }
+                        if ( $idx1 == $idx2 ) { $avgHeatMapExon[$idx1][$idx1] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ); }
                         else {
-                            $avgHeatMapExon[$idx1][$idx2] += getExonLen ( $data[11], $idx1 ) + getExonLen ( $data[11], $idx2 + 1 );
-                            $avgHeatMapExon[$idx2][$idx1] += getExonLen ( $data[11], $idx1 ) + getExonLen ( $data[11], $idx2 + 1 );
+                            $avgHeatMapExon[$idx1][$idx2] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ) + getExonLen ( $ref_annotation, $data[11], $exonID2 + 1 );
+                            $avgHeatMapExon[$idx2][$idx1] += getExonLen ( $ref_annotation, $data[11], $exonID1 + 1 ) + getExonLen ( $ref_annotation, $data[11], $exonID2 + 1 );
                         }
                     }
                 }
