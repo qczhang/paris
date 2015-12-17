@@ -5,11 +5,24 @@ if (!require("RColorBrewer")) { install.packages("RColorBrewer", dependencies = 
 
 exonHM <- as.matrix(read.table(args[1], header = FALSE))
 exonHM[lower.tri(exonHM)] <- NA
+avgExonHM <- as.matrix(read.table(args[3], header = FALSE))
+avgExonHM[lower.tri(avgExonHM)] <- NA
+pcHM <- as.matrix(read.table(args[5], header = FALSE))
+pcHM[lower.tri(pcHM)] <- NA
+avgPCHM <- as.matrix(read.table(args[7], header = FALSE))
+avgPCHM[lower.tri(avgPCHM)] <- NA
+
+#lmat <- rbind(c(0,3),c(2,1),c(0,4))
+lhei <- c(1,5)
+lwid <- c(1,4)
 
 pdf (args[2]);
+par(cex.main=0.90)
 heatmap.2(log2(exonHM+2),
         cellnote = exonHM,  # same data set for cell labels
-        main = "Connections counts within/across different exons", # heat map title
+	lhei = lhei,
+	lwid = lwid,
+        main = "Counts of connections\nwithin/across different exons", # heat map title
         notecol="black",      # change font color of cell labels to black
         density.info="none",  # turns off density plot inside color legend
         trace="none",         # turns off trace lines inside the heat map
@@ -22,12 +35,13 @@ heatmap.2(log2(exonHM+2),
         Colv=NA)            # turn off column clustering
 dev.off();
 
-avgExonHM <- as.matrix(read.table(args[3], header = FALSE))
-avgExonHM[lower.tri(avgExonHM)] <- NA
 pdf (args[4]);
+par(cex.main=0.90)
 heatmap.2(avgExonHM,
         cellnote = round(avgExonHM, digits = 2),  # same data set for cell labels
-        main = "Connections counts within/across different exons normalized by the size", # heat map title
+	lhei = lhei,
+	lwid = lwid,
+        main = "Counts of connections within/across\ndifferent exons normalized by size", # heat map title
         notecol="black",      # change font color of cell labels to black
         density.info="none",  # turns off density plot inside color legend
         trace="none",         # turns off trace lines inside the heat map
@@ -40,12 +54,13 @@ heatmap.2(avgExonHM,
         Colv=NA)            # turn off column clustering
 dev.off();
 
-pcHM <- as.matrix(read.table(args[5], header = FALSE))
-pcHM[lower.tri(pcHM)] <- NA
 pdf (args[6]);
+par(cex.main=0.90)
 heatmap.2(log2(pcHM+2),
         cellnote = pcHM,  # same data set for cell labels
-        main = "Connections counts within/across different regions of protein coding genes", # heat map title
+	lhei = lhei,
+	lwid = lwid,
+        main = "         Counts of connections within/across different regions\n of protein coding genes", # heat map title
         notecol="black",      # change font color of cell labels to black
         density.info="none",  # turns off density plot inside color legend
         trace="none",         # turns off trace lines inside the heat map
@@ -58,12 +73,13 @@ heatmap.2(log2(pcHM+2),
         Colv=NA)            # turn off column clustering
 dev.off();
 
-avgPCHM <- as.matrix(read.table(args[7], header = FALSE))
-avgPCHM[lower.tri(avgPCHM)] <- NA
 pdf (args[8]);
+par(cex.main=0.90)
 heatmap.2(avgPCHM,
         cellnote = round(avgPCHM, digits = 2),  # same data set for cell labels
-        main = "Connections counts within/across different regions of protein coding genes normalized by the size", # heat map title
+	lhei = lhei,
+	lwid = lwid,
+        main = "          Counts of connections within/across different regions\n        of protein coding genes normalized by size", # heat map title
         notecol="black",      # change font color of cell labels to black
         density.info="none",  # turns off density plot inside color legend
         trace="none",         # turns off trace lines inside the heat map
